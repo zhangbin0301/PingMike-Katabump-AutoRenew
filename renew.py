@@ -29,53 +29,45 @@ def main():
             print("🎯 登录成功，跳转到续期页面...")
             page.goto(RENEW_URL, timeout=15000)
 
-            # 检查是否有 Renew 按钮
-            renew_button = page.locator("text=Renew").first
-            if renew_button.is_visible():
-                print("🔁 找到 Renew 按钮，点击打开弹窗...")
-                renew_button.click()
+            print("🔁 寻找并点击第一个蓝色 Renew 按钮...")
+            renew_button = page.wait_for_selector("button.btn-primary:has-text('Renew')", timeout=10000)
+            renew_button.click()
 
-                # 等待弹窗出现
-                print("⏳ 等待弹窗加载中...")
-                page.wait_for_selector(".modal-title:has-text('Renew')", timeout=10000)
+            print("⏳ 等待弹窗加载中...")
+            page.wait_for_selector("div.modal-body form", timeout=10000)
+            print("📦 弹窗已加载，准备处理 Turnstile 验证...")
 
-                print("📸 弹窗加载后截图一张以确认内容")
-                page.screenshot(path="modal_opened.png", full_page=True)
-
-                print("⏳ 等待 Turnstile iframe 加载中...")
-                turnstile_iframe = page.wait_for_selector("iframe[title*='Cloudflare']", timeout=15000)
-
+            # 检查 Turnstile iframe
+            try:
+                turnstile_iframe = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=10000)
                 if turnstile_iframe:
                     print("⚠️ 检测到 Turnstile 验证，尝试点击勾选...")
 
                     frame = turnstile_iframe.content_frame()
                     if frame:
-                        checkbox = frame.wait_for_selector('input[type="checkbox"]', timeout=10000)
+                        checkbox = frame.wait_for_selector('input[type="checkbox"]', timeout=5000)
                         checkbox.click()
                         print("✅ 已点击 Turnstile 勾选框")
 
-                        # 等待验证通过（iframe 消失或 checkbox 消失）
-                        print("⏳ 等待 Turnstile 验证通过...")
-                        page.wait_for_selector("iframe[title*='Cloudflare']", state="detached", timeout=30000)
+                        # 等待验证通过（iframe 消失）
+                        page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", state="detached", timeout=30000)
                         print("✅ Turnstile 验证已通过")
                     else:
                         print("⚠️ 无法获取 iframe 内部 frame")
                 else:
                     print("⏩ 未检测到 Turnstile 验证，可能已跳过")
 
-                # 提交续期请求
-                print("🚀 点击弹窗内最终 Renew 提交按钮...")
-                submit_btn = page.locator('#renew-modal button[type="submit"].btn-primary')
-                submit_btn.click()
+            except PlaywrightTimeoutError as e:
+                print(f"⚠️ Turnstile 验证 iframe 加载失败: {e}")
 
-                # 等待页面响应
-                time.sleep(2)
-                page.screenshot(path="after_renew.png", full_page=True)
-                print("✅ 续期完成，截图已保存 after_renew.png")
+            # 提交续期
+            print("🚀 点击弹窗内最终 Renew 提交按钮...")
+            page.click('#renew-modal button[type="submit"].btn-primary', timeout=5000)
 
-            else:
-                print("⚠️ 未找到 Renew 按钮，请检查页面状态")
-                page.screenshot(path="no_renew_button.png", full_page=True)
+            # 等待一下执行效果
+            time.sleep(2)
+            page.screenshot(path="after_renew.png", full_page=True)
+            print("✅ 续期完成，截图已保存 after_renew.png")
 
         except PlaywrightTimeoutError as e:
             print(f"❌ 页面超时: {e}")
