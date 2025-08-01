@@ -38,9 +38,12 @@ def main():
                 page.click("text=Renew")
 
                 try:
-                    # 等待 modal 弹窗出现
-                    page.wait_for_selector("#renew-modal", timeout=10000)
-                    print("📦 Renew 弹窗已出现")
+                    # 等待 modal DOM 插入
+                    page.wait_for_selector("#renew-modal", state="attached", timeout=10000)
+                    print("📦 Renew 弹窗已插入，等待渲染完成...")
+                    
+                    # 等动画完成再开始下一步（bootstrap 动画大约 150-300ms，这里保守 2 秒）
+                     time.sleep(10)
 
                     # 等待 Turnstile iframe 出现
                     turnstile_iframe = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=10000)
