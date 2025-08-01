@@ -1,11 +1,18 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-import time
 import os
 
 # --- 环境变量 ---
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=105562"
+
+# --- 封装全页截图函数 ---
+def safe_screenshot(page, filename: str):
+    try:
+        page.screenshot(path=filename, full_page=True)
+        print(f"📸 已保存截图: {filename}")
+    except Exception as e:
+        print(f"⚠️ 截图失败 {filename}: {e}")
 
 def main():
     print("✅ 开始执行续期任务...")
@@ -34,7 +41,7 @@ def main():
             print("🎯 打开服务器编辑页面...")
             page.goto(RENEW_URL, timeout=20000)
             page.wait_for_load_state("domcontentloaded")
-            page.screenshot(path="before_renew.png")
+            safe_screenshot(page, "before_renew.png")
 
             # 3. 点击 Renew 按钮
             print("🟦 查找 Renew 按钮...")
@@ -42,29 +49,31 @@ def main():
             trigger_button.scroll_into_view_if_needed()
             trigger_button.click()
 
-            print("🪟 等待弹窗加载...")
+            print("🪟 等待 Renew 弹窗加载...")
             page.wait_for_selector("h5.modal-title:has-text('Renew')", timeout=15000)
 
             # 4. 处理 Cloudflare Turnstile 验证
             try:
-                if page.locator("div.cf-turnstile").is_visible():
-                    print("🛡️ 发现验证码，处理中...")
-                    turnstile_iframe = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=15000)
-                    frame = turnstile_iframe.content_frame()
+                print("🛡️ 查找验证码 iframe...")
+                turnstile_iframe = page.locator("#renew-modal iframe[title*='Cloudflare']").first
+                turnstile_iframe.wait_for(timeout=10000)
+                frame = turnstile_iframe.content_frame()
 
-                    checkbox = frame.locator("input[type='checkbox']")
-                    checkbox.wait_for(state="visible", timeout=5000)
-                    checkbox.click()
-                    print("☑️ 已点击复选框，等待验证通过...")
+                checkbox = frame.locator("input[type='checkbox']")
+                checkbox.wait_for(state="visible", timeout=5000)
+                checkbox.click()
+                print("☑️ 已点击验证码复选框，等待验证完成...")
 
-                    # 等待勾选成功图标
-                    frame.wait_for_selector(".ctp-checkbox-label span.ctp-icon-checkmark", timeout=10000)
-                    print("✅ Cloudflare 验证成功！")
-                    frame.screenshot(path="captcha_frame.png")
-                else:
-                    print("⚠️ 未检测到验证码组件")
+                # 等待 ✅ 图标出现
+                frame.wait_for_selector(".ctp-checkbox-label span.ctp-icon-checkmark", timeout=10000)
+                print("✅ Cloudflare 验证通过！")
+
+                # 独立截图 iframe
+                frame.screenshot(path="captcha_frame.png")
+                print("📸 已保存验证码截图: captcha_frame.png")
+
             except PlaywrightTimeoutError:
-                print("⏰ 验证码加载超时")
+                print("⏰ 验证码加载或验证超时")
             except Exception as e:
                 print(f"⚠️ 验证码处理异常: {e}")
 
@@ -81,16 +90,16 @@ def main():
                 success_alert.wait_for(timeout=10000)
                 print(f"🎉 续期成功: {success_alert.inner_text()}")
             except PlaywrightTimeoutError:
-                print("⚠️ 未检测到成功消息")
+                print("⚠️ 未检测到成功提示")
 
-            page.screenshot(path="after_renew.png")
+            safe_screenshot(page, "after_renew.png")
 
         except PlaywrightTimeoutError as e:
             print(f"❌ 操作超时: {e}")
-            page.screenshot(path="timeout_error.png")
+            safe_screenshot(page, "timeout_error.png")
         except Exception as e:
-            print(f"❌ 发生错误: {e}")
-            page.screenshot(path="error.png")
+            print(f"❌ 脚本执行异常: {e}")
+            safe_screenshot(page, "error.png")
         finally:
             print("🚪 关闭浏览器...")
             context.close()
