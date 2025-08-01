@@ -50,7 +50,7 @@ def main():
 
             # 续期流程
             print("🎯 进入续期页面...")
-            page.goto(RENEW_URL, timeout=15000)
+            page.goto(RENEW_URL, timeout=60000,wait_until="domcontentloaded")
             page.wait_for_load_state("networkidle")
             page.screenshot(path="1_before_renew.png")
 
