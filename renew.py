@@ -6,6 +6,36 @@ EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=105562"
 
+def click_turnstile_checkbox(page):
+    max_retry = 3
+    for attempt in range(max_retry):
+        try:
+            print(f"尝试获取 Turnstile iframe（第 {attempt+1} 次）...")
+            iframe_el = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=10000)
+            frame = iframe_el.content_frame()
+            if not frame:
+                raise Exception("未能获取 iframe 内部 frame")
+
+            print("等待勾选框出现...")
+            checkbox = frame.wait_for_selector('input[type="checkbox"]', timeout=5000)
+
+            print("点击 Turnstile 勾选框...")
+            checkbox.click()
+
+            # 等待验证成功的条件（这里用 iframe 消失代替）
+            page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", state="detached", timeout=30000)
+            print("✅ Turnstile 验证通过")
+            return True
+        except Exception as e:
+            print(f"⚠️ Turnstile 勾选尝试失败: {e}")
+            if attempt < max_retry - 1:
+                print("重试中...")
+                time.sleep(3)
+            else:
+                print("❌ 超过最大重试次数，放弃")
+                page.screenshot(path=f"turnstile_fail_attempt_{attempt+1}.png")
+                return False
+
 def main():
     print("✅ 开始执行续期任务...")
 
@@ -32,49 +62,46 @@ def main():
             page.screenshot(path="renew_page.png", full_page=True)
             print("📸 已截图保存 renew_page.png")
 
-            # 检查是否有 Renew 按钮
             if page.locator("text=Renew").first.is_visible():
                 print("🔁 找到 Renew 按钮，点击打开弹窗...")
                 page.click("text=Renew")
 
                 try:
-                    # 等待 modal 弹出框 DOM 插入
-                    page.wait_for_selector("#renew-modal", state="attached", timeout=10000)
-                    print("📦 Renew 弹窗已插入，等待渲染完成...")
+                    # 等待 modal DOM 插入
+                    modal = page.wait_for_selector("#renew-modal", state="attached", timeout=10000)
+                    print("📦 弹窗 DOM 已加载，截图确认状态...")
+                    page.screenshot(path="renew_modal.png", full_page=True)
 
-                    # 等待动画结束（2 秒）
-                    time.sleep(2)
+                    display = modal.evaluate("el => window.getComputedStyle(el).display")
+                    print(f"弹窗 display 样式是: {display}")
 
-                    # 检查 Turnstile iframe
-                    turnstile_iframe = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=10000)
-                    if turnstile_iframe:
-                        print("⚠️ 检测到 Turnstile 验证，尝试点击勾选...")
+                    if display == "none":
+                        print("⚠️ 弹窗存在但不可见，等待2秒后重试获取显示状态...")
+                        time.sleep(2)
+                        display = modal.evaluate("el => window.getComputedStyle(el).display")
+                        print(f"二次检测弹窗 display 样式是: {display}")
 
-                        frame = turnstile_iframe.content_frame()
-                        if frame:
-                            checkbox = frame.wait_for_selector('input[type="checkbox"]', timeout=5000)
-                            checkbox.click()
-                            print("✅ 已点击 Turnstile 勾选框")
-
-                            # 等待验证通过（iframe 消失）
-                            page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", state="detached", timeout=30000)
-                            print("✅ Turnstile 验证已通过")
+                        if display == "none":
+                            print("❌ 弹窗仍不可见，跳过后续操作")
+                            return
                         else:
-                            print("⚠️ 无法获取 iframe 内部 frame")
+                            print("✅ 弹窗已显示，继续操作")
+
+                    # 自动勾选 Turnstile
+                    if click_turnstile_checkbox(page):
+                        print("🚀 点击弹窗内最终 Renew 提交按钮...")
+                        page.click('#renew-modal button[type="submit"].btn-primary')
+
+                        time.sleep(2)
+                        page.screenshot(path="after_renew.png", full_page=True)
+                        print("✅ 续期完成，截图已保存 after_renew.png")
                     else:
-                        print("⏩ 未检测到 Turnstile 验证，可能已跳过")
-
-                    # 提交续期请求
-                    print("🚀 点击弹窗内最终 Renew 提交按钮...")
-                    page.click('#renew-modal button[type="submit"].btn-primary')
-
-                    time.sleep(2)
-                    page.screenshot(path="after_renew.png", full_page=True)
-                    print("✅ 续期完成，截图已保存 after_renew.png")
+                        print("❌ Turnstile 验证失败，续期未完成")
 
                 except PlaywrightTimeoutError as e:
                     print(f"❌ 弹窗或验证码处理超时: {e}")
                     page.screenshot(path="modal_timeout.png", full_page=True)
+
             else:
                 print("⚠️ 未找到 Renew 按钮，请检查页面状态")
                 page.screenshot(path="no_renew_button.png", full_page=True)
