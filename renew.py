@@ -7,74 +7,88 @@ PASSWORD = os.getenv("KATABUMP_PASSWORD")
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=105562"
 
 def main():
-    print("✅ 开始执行续期任务...")
+    print("✅ Starting renewal task...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=False)  # 调试时可设为 False
         context = browser.new_context()
         page = context.new_page()
 
         try:
-            print("🔐 打开登录页面...")
+            # 登录流程
+            print("🔐 Navigating to login page...")
             page.goto("https://dashboard.katabump.com/login", timeout=20000)
-
-            print("🧾 输入账号密码...")
+            
+            print("🧾 Filling credentials...")
             page.fill('input[name="email"]', EMAIL)
             page.fill('input[name="password"]', PASSWORD)
             page.click('button[type="submit"]')
-
-            print("⏳ 正在等待跳转 dashboard...")
+            
+            print("⏳ Waiting for dashboard...")
             page.wait_for_url("**/dashboard", timeout=15000)
 
-            print("🎯 登录成功，跳转到续期页面...")
+            # 续期流程
+            print("🎯 Navigating to server page...")
             page.goto(RENEW_URL, timeout=15000)
+            page.wait_for_load_state("networkidle")
+            page.screenshot(path="before_renew.png")
 
-            print("🔁 寻找并点击第一个蓝色 Renew 按钮...")
-            renew_button = page.wait_for_selector("button.btn-primary:has-text('Renew')", timeout=10000)
-            renew_button.click()
-
-            print("⏳ 等待弹窗加载中...")
-            page.wait_for_selector("div.modal-body form", timeout=10000)
-            print("📦 弹窗已加载，准备处理 Turnstile 验证...")
-
-            # 检查 Turnstile iframe
+            # 点击触发模态框的按钮
+            print("🔍 Finding renew trigger button...")
+            trigger_button = page.wait_for_selector(
+                "//td[contains(text(), 'Delete server')]/following-sibling::td//button[contains(text(), 'Renew')]",
+                timeout=20000,
+                state="visible"
+            )
+            trigger_button.scroll_into_view_if_needed()
+            trigger_button.click()
+            
+            # 处理模态框
+            print("🪟 Waiting for renew modal...")
+            page.wait_for_selector("h5.modal-title:has-text('Renew')", timeout=10000)
+            
+            # 处理Cloudflare验证码
             try:
-                turnstile_iframe = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=10000)
-                if turnstile_iframe:
-                    print("⚠️ 检测到 Turnstile 验证，尝试点击勾选...")
-
+                if page.query_selector("div.cf-turnstile"):
+                    print("🛡️ Handling Cloudflare Turnstile...")
+                    turnstile_iframe = page.wait_for_selector(
+                        "#renew-modal iframe[title*='Cloudflare']", 
+                        timeout=10000
+                    )
                     frame = turnstile_iframe.content_frame()
-                    if frame:
-                        checkbox = frame.wait_for_selector('input[type="checkbox"]', timeout=5000)
-                        checkbox.click()
-                        print("✅ 已点击 Turnstile 勾选框")
-
-                        # 等待验证通过（iframe 消失）
-                        page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", state="detached", timeout=30000)
-                        print("✅ Turnstile 验证已通过")
-                    else:
-                        print("⚠️ 无法获取 iframe 内部 frame")
-                else:
-                    print("⏩ 未检测到 Turnstile 验证，可能已跳过")
-
-            except PlaywrightTimeoutError as e:
-                print(f"⚠️ Turnstile 验证 iframe 加载失败: {e}")
+                    checkbox = frame.wait_for_selector("input[type='checkbox']", timeout=5000)
+                    checkbox.click()
+                    print("✅ Cloudflare checkbox clicked")
+                    time.sleep(2)  # 等待验证完成
+            except Exception as e:
+                print(f"⚠️ Cloudflare handling skipped: {e}")
 
             # 提交续期
-            print("🚀 点击弹窗内最终 Renew 提交按钮...")
-            page.click('#renew-modal button[type="submit"].btn-primary', timeout=5000)
+            print("🔵 Clicking final renew button...")
+            modal_button = page.wait_for_selector(
+                "#renew-modal button.btn-primary[type='submit']", 
+                timeout=10000,
+                state="visible"
+            )
+            modal_button.click()
+            
+            # 验证结果
+            print("⏳ Waiting for renewal confirmation...")
+            try:
+                page.wait_for_selector("div.alert-success", timeout=5000)
+                print("🎉 Renewal successful!")
+            except:
+                print("⚠️ No success message detected (may still have worked)")
 
-            # 等待一下执行效果
-            time.sleep(2)
-            page.screenshot(path="after_renew.png", full_page=True)
-            print("✅ 续期完成，截图已保存 after_renew.png")
+            page.screenshot(path="after_renew.png")
+            print("✅ Screenshot saved: after_renew.png")
 
         except PlaywrightTimeoutError as e:
-            print(f"❌ 页面超时: {e}")
-            page.screenshot(path="timeout_error.png", full_page=True)
+            print(f"❌ Timeout error: {e}")
+            page.screenshot(path="timeout_error.png")
         except Exception as e:
-            print(f"❌ 发生错误: {e}")
-            page.screenshot(path="general_error.png", full_page=True)
+            print(f"❌ Error occurred: {e}")
+            page.screenshot(path="error.png")
         finally:
             context.close()
             browser.close()
