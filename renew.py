@@ -28,24 +28,24 @@ def main():
 
             print("🎯 登录成功，跳转到续期页面...")
             page.goto(RENEW_URL, timeout=15000)
-            
+
             page.screenshot(path="renew_page.png", full_page=True)
             print("📸 已截图保存 renew_page.png")
 
-            # 检查是否有 Renew 按钮（首次点击，触发 modal 弹出）
+            # 检查是否有 Renew 按钮
             if page.locator("text=Renew").first.is_visible():
                 print("🔁 找到 Renew 按钮，点击打开弹窗...")
                 page.click("text=Renew")
 
                 try:
-                    # 等待 modal DOM 插入
+                    # 等待 modal 弹出框 DOM 插入
                     page.wait_for_selector("#renew-modal", state="attached", timeout=10000)
                     print("📦 Renew 弹窗已插入，等待渲染完成...")
-                    
-                    # 等动画完成再开始下一步（bootstrap 动画大约 150-300ms，这里保守 2 秒）
-                     time.sleep(10)
 
-                    # 等待 Turnstile iframe 出现
+                    # 等待动画结束（2 秒）
+                    time.sleep(2)
+
+                    # 检查 Turnstile iframe
                     turnstile_iframe = page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", timeout=10000)
                     if turnstile_iframe:
                         print("⚠️ 检测到 Turnstile 验证，尝试点击勾选...")
@@ -56,6 +56,7 @@ def main():
                             checkbox.click()
                             print("✅ 已点击 Turnstile 勾选框")
 
+                            # 等待验证通过（iframe 消失）
                             page.wait_for_selector("#renew-modal iframe[title*='Cloudflare']", state="detached", timeout=30000)
                             print("✅ Turnstile 验证已通过")
                         else:
@@ -63,7 +64,7 @@ def main():
                     else:
                         print("⏩ 未检测到 Turnstile 验证，可能已跳过")
 
-                    # 最终点击 modal 中的 Renew 提交按钮
+                    # 提交续期请求
                     print("🚀 点击弹窗内最终 Renew 提交按钮...")
                     page.click('#renew-modal button[type="submit"].btn-primary')
 
