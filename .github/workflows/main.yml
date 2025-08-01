@@ -25,7 +25,6 @@ jobs:
 
       - name: Run renew script
         env:
-          KATABUMP_COOKIE: ${{ secrets.KATABUMP_COOKIE }}
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
         run: python renew.py
