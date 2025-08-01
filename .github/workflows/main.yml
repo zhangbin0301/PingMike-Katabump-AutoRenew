@@ -1,50 +1,38 @@
-name: Renew Katabump
+name: Renew Katabump VPS
 
 on:
-  workflow_dispatch:  # 允许手动触发
   schedule:
-    - cron: '0 0 */3 * *'  # 每三天运行一次
-  push:
-    paths:
-      - 'renew.py'  # 仅当 renew.py 修改时触发
+    - cron: '0 0 */3 * *' # 每 3 天执行一次
+  workflow_dispatch:
 
 jobs:
   renew:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: 📥 Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Playwright
+      - name: 📦 Install Dependencies
         run: |
           pip install playwright
           playwright install chromium
 
-      - name: Run renew script
+      - name: 🔄 Run Renew Script
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
           KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
-        run: python renew.py
+        run: |
+          mkdir -p screenshots
+          python renew.py
 
-      - name: Upload screenshot on failure
-        if: failure()
+      - name: 📤 Upload Screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: katabump_error_screenshot
-          path: |
-            *.png
-
-      - name: 上传错误截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-screenshots
-          path: |
-            *.png
+          name: screenshots
+          path: screenshots
