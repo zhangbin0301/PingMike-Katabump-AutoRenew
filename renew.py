@@ -2,95 +2,102 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import time
 import os
 
+# --- 全局变量 ---
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=105562"
 
-def handle_cloudflare_turnstile(page):
-    """专门处理续期模态框内的Cloudflare验证"""
-    print("🛡️ 定位续期模态框内的Cloudflare验证...")
-    try:
-        # 更精确的定位：只在续期模态框内查找
-        renew_modal = page.locator("#renew-modal")
-        turnstile = renew_modal.locator("div.cf-turnstile")
-        
-        if turnstile.count() > 0:
-            print(f"⚠️ 发现 {turnstile.count()} 个验证组件，精确处理续期模态框内的...")
-            turnstile_iframe = renew_modal.locator("iframe[title*='Cloudflare']")
-            
-            if turnstile_iframe.count() > 0:
-                print("✅ 定位到验证iframe，准备点击...")
-                frame = turnstile_iframe.first.content_frame()
-                checkbox = frame.locator("input[type='checkbox']")
-                checkbox.click()
-                print("✅ 已点击验证复选框")
-                time.sleep(3)  # 等待验证完成
-                return True
-        return False
-    except Exception as e:
-        print(f"⚠️ 验证码处理异常: {e}")
-        return False
 
 def main():
     print("✅ 开始执行续期任务...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)  # 调试时建议可视化
+        # --- 解决方案: 添加 launch_options 来解决 root 用户运行问题 ---
+        launch_options = {
+            "headless": True, # 在服务器上运行时通常设置为 True
+            "args": ["--no-sandbox"] # 关键！允许在 root 环境（如 Docker, GitHub Actions）下运行
+        }
+        browser = p.chromium.launch(**launch_options)
+        
         context = browser.new_context()
         page = context.new_page()
 
         try:
-            # 登录流程
-            print("🔐 打开登录页面...")
-            page.goto("https://dashboard.katabump.com/login", timeout=20000)
+            # 1. 登录流程
+            print("🔐 跳转到登录页面...")
+            page.goto("https://dashboard.katabump.com/login", timeout=30000)
+            
+            print("🧾 填写登录信息...")
             page.fill('input[name="email"]', EMAIL)
             page.fill('input[name="password"]', PASSWORD)
             page.click('button[type="submit"]')
-            page.wait_for_url("**/dashboard", timeout=15000)
+            
+            print("⏳ 等待跳转至 Dashboard...")
+            page.wait_for_url("**/dashboard", timeout=20000)
 
-            # 续期流程
-            print("🎯 进入续期页面...")
-            page.goto(RENEW_URL, timeout=60000,wait_until="domcontentloaded")
-            page.wait_for_load_state("networkidle")
-            page.screenshot(path="1_before_renew.png")
+            # 2. 续期流程
+            print("🎯 跳转到服务器页面...")
+            page.goto(RENEW_URL, timeout=20000)
+            page.wait_for_load_state("domcontentloaded") # 等待DOM加载完成
+            page.screenshot(path="before_renew.png")
 
-            # 点击触发按钮
-            print("🔍 定位Renew触发按钮...")
+            # 3. 点击触发弹窗的按钮 (使用 XPath 精准定位)
+            print("🔍 查找 Renew 按钮...")
             trigger_button = page.locator(
-                "//td[contains(text(), 'Delete server')]/following-sibling::td//button[contains(text(), 'Renew')]"
+                "//button[contains(text(), 'Renew')]"
             ).first
             trigger_button.scroll_into_view_if_needed()
             trigger_button.click()
             
-            # 等待模态框
+            # 4. 等待弹窗出现
             print("🪟 等待续期弹窗...")
-            page.wait_for_selector("#renew-modal h5.modal-title:has-text('Renew')", timeout=10000)
-            page.screenshot(path="2_modal_opened.png")
-
-            # 处理验证码
-            if handle_cloudflare_turnstile(page):
-                print("✅ 验证码处理完成")
-            else:
-                print("⏩ 未检测到需要处理的验证码")
-
-            # 提交续期
-            print("🚀 提交续期请求...")
-            submit_button = page.locator("#renew-modal button.btn-primary[type='submit']").first
-            submit_button.click()
+            page.wait_for_selector("h5.modal-title:has-text('Renew')", timeout=15000)
             
-            # 验证结果
+            # 5. 处理 Cloudflare Turnstile 验证码
             try:
-                page.wait_for_selector("div.alert-success", timeout=5000)
-                print("🎉 续期成功！")
-            except:
-                print("⚠️ 未检测到成功提示（可能仍需手动确认）")
+                if page.locator("div.cf-turnstile").is_visible():
+                    print("🛡️ 处理 Cloudflare 验证码...")
+                    turnstile_iframe = page.wait_for_selector(
+                        "#renew-modal iframe[title*='Cloudflare']", 
+                        timeout=15000
+                    )
+                    frame = turnstile_iframe.content_frame()
+                    checkbox = frame.locator("input[type='checkbox']")
+                    checkbox.click()
+                    # 等待验证完成的更好方式是等待提交按钮变为可点击状态
+                    print("✅ Cloudflare 复选框已点击")
+            except PlaywrightTimeoutError:
+                print("⚠️ 未找到或处理 Cloudflare 验证码超时，尝试继续...")
+            except Exception as e:
+                print(f"⚠️ Cloudflare 处理异常: {e}")
 
-            page.screenshot(path="3_after_renew.png")
+            # 6. 提交续期
+            print("🔵 点击最终的 Renew 按钮...")
+            modal_button = page.locator("#renew-modal button.btn-primary[type='submit']")
+            modal_button.wait_for(timeout=10000, state="visible") # 确保按钮可见
+            modal_button.click()
+            
+            # 7. 验证结果
+            print("⏳ 等待续期确认...")
+            try:
+                # 等待成功提示出现
+                success_alert = page.locator("div.alert-success")
+                success_alert.wait_for(timeout=10000)
+                print(f"🎉 续期成功! 消息: {success_alert.inner_text()}")
+            except PlaywrightTimeoutError:
+                print("⚠️ 未检测到成功消息 (但操作可能已成功)")
 
+            page.screenshot(path="after_renew.png")
+            print("✅ 已保存截图: after_renew.png")
+
+        except PlaywrightTimeoutError as e:
+            print(f"❌ 操作超时: {e}")
+            page.screenshot(path="timeout_error.png")
         except Exception as e:
             print(f"❌ 发生错误: {e}")
             page.screenshot(path="error.png")
         finally:
+            print("🚪 关闭浏览器...")
             context.close()
             browser.close()
 
