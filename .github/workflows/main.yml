@@ -1,9 +1,12 @@
 name: Renew Katabump
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 允许手动触发
   schedule:
     - cron: '0 0 */3 * *'  # 每三天运行一次
+  push:
+    paths:
+      - 'renew.py'  # 仅当 renew.py 修改时触发
 
 jobs:
   renew:
