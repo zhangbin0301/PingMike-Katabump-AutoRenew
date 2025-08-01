@@ -1,94 +1,99 @@
+import asyncio
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from pathlib import Path
 import os
-import time
 
+# 配置
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
-RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=105562"
+SERVER_ID = os.getenv("KATABUMP_SERVER_ID")  # 服务器ID，如105562
+HEADLESS = True  # 设置为 False 可本地调试
+SCREENSHOT_DIR = Path("./screenshots")
+SCREENSHOT_DIR.mkdir(exist_ok=True)
 
-def safe_screenshot(page, filename: str):
-    try:
-        page.screenshot(path=filename, full_page=True)
-        print(f"📸 已保存截图: {filename}")
-    except Exception as e:
-        print(f"⚠️ 截图失败 {filename}: {e}")
+def take_screenshot(page, name):
+    path = SCREENSHOT_DIR / f"{name}.png"
+    page.screenshot(path=path, full_page=True)
+    print(f"📸 已保存截图: {name}.png")
+
+def wait_and_click(locator, timeout=10000):
+    locator.wait_for(state="visible", timeout=timeout)
+    locator.click()
 
 def main():
     print("✅ 开始执行续期任务...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
-            locale="en-US",
-            timezone_id="Europe/Berlin",
-        )
+        browser = p.chromium.launch(headless=HEADLESS)
+        context = browser.new_context()
         page = context.new_page()
 
         try:
             # 登录
             print("🔐 打开登录页面...")
             page.goto("https://dashboard.katabump.com/login", timeout=30000)
+
             page.fill('input[name="email"]', EMAIL)
             page.fill('input[name="password"]', PASSWORD)
-            page.click('button[type="submit"]')
+            page.click('button:has-text("Login")')
+
             print("⏳ 等待跳转到 Dashboard...")
-            page.wait_for_url("**/dashboard", timeout=20000)
+            page.wait_for_url("**/dashboard", timeout=30000)
 
-            # 打开续期页面
+            # 打开服务器编辑页
             print("🎯 打开服务器编辑页面...")
-            page.goto(RENEW_URL, timeout=20000)
-            page.wait_for_load_state("domcontentloaded")
-            safe_screenshot(page, "before_renew.png")
+            edit_url = f"https://dashboard.katabump.com/servers/edit?id={SERVER_ID}"
+            page.goto(edit_url, timeout=30000)
+            take_screenshot(page, "before_renew")
 
-            # 点击 Renew 按钮
-            print("🟦 点击页面上的第一个 Renew 按钮...")
-            renew_btn = page.locator("//button[contains(text(), 'Renew')]").first
-            renew_btn.scroll_into_view_if_needed()
-            renew_btn.click()
+            # 找到 Renew 按钮
+            print("🟦 查找 Renew 按钮...")
+            renew_btn = page.locator("button.btn.btn-primary:has-text('Renew')")
+            wait_and_click(renew_btn)
 
-            # 等待弹窗出现
-            print("🪟 等待 Renew 弹窗出现...")
-            page.wait_for_selector("#renew-modal.show", timeout=10000)
+            # 等待弹窗加载
+            print("🪟 等待 Renew 弹窗加载...")
+            modal = page.locator("#renew-modal.show")
+            modal.wait_for(timeout=10000)
 
-            # 验证码点击
+            # 处理 Turnstile 验证码
+            print("🛡️ 查找验证码 iframe...")
+            iframe_element = modal.locator("iframe[title*='Cloudflare']")
+            iframe_element.wait_for(timeout=10000)
+
             print("🔍 查找并点击验证码 checkbox...")
-            turnstile_iframe = page.frame_locator("#renew-modal iframe[title*='Cloudflare']")
-            checkbox = turnstile_iframe.locator("input[type='checkbox']")
-            checkbox.wait_for(timeout=10000)
-            checkbox.click()
-            print("✅ 已点击验证码复选框，等待验证通过...")
+            frame = iframe_element.first.content_frame()
+            if frame is None:
+                raise Exception("无法获取 iframe frame 内容")
 
-            # 等待打勾成功
-            turnstile_iframe.locator(".ctp-checkbox-label span.ctp-icon-checkmark").wait_for(timeout=15000)
-            print("✅ 验证成功 ✅")
-            turnstile_iframe.locator("body").screenshot(path="captcha_frame.png")
-            print("📸 已截图验证码 iframe")
+            checkbox = frame.locator('input[type="checkbox"]')
+            checkbox.wait_for(state="visible", timeout=10000)
+            checkbox.click(force=True)
 
-            # 点击弹窗中的 Renew 提交按钮
-            print("🚀 点击弹窗中的 Renew 提交按钮...")
-            modal_renew_btn = page.locator("#renew-modal button.btn-primary[type='submit']")
-            modal_renew_btn.wait_for(state="visible", timeout=10000)
-            modal_renew_btn.click()
+            # 等待验证码打勾成功（checkbox 变成aria-checked="true"）
+            frame.locator('input[type="checkbox"][aria-checked="true"]').wait_for(timeout=10000)
 
-            # 等待续期成功提示
+            print("✅ 验证码通过，点击 Renew 提交按钮...")
+            modal.locator("button.btn.btn-primary:has-text('Renew')").click()
+
+            # 检查是否成功
             print("🕵️ 检查是否续期成功...")
-            success_alert = page.locator("div.alert-success")
-            success_alert.wait_for(timeout=10000)
-            print(f"🎉 续期成功: {success_alert.inner_text()}")
+            success_toast = page.locator(".Toastify__toast--success")
+            success_toast.wait_for(timeout=10000)
 
-            safe_screenshot(page, "after_renew.png")
+            print("🎉 续期成功！")
 
         except PlaywrightTimeoutError as e:
             print(f"❌ 超时错误: {e}")
-            safe_screenshot(page, "timeout_error.png")
+            take_screenshot(page, "timeout_error")
+
         except Exception as e:
-            print(f"❌ 异常发生: {e}")
-            safe_screenshot(page, "error.png")
+            print(f"❌ 发生错误: {e}")
+            take_screenshot(page, "general_error")
+
         finally:
+            take_screenshot(page, "after_renew")
             print("🚪 关闭浏览器...")
-            context.close()
             browser.close()
 
 if __name__ == "__main__":
