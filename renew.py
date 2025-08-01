@@ -26,7 +26,7 @@ def main():
             page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
 
             print("📝 输入账号密码并登录...")
-            page.fill('input[name="username"]', KATABUMP_EMAIL)
+            page.fill('input[name="email"]', KATABUMP_EMAIL)
             page.fill('input[name="password"]', KATABUMP_PASSWORD)
             page.click('button[type="submit"]')
 
