@@ -1,121 +1,92 @@
 import os
 import time
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
-def add_server_time(server_url="https://dashboard.katabump.com/servers/edit?id=105562"):
-    katabump_cookie_raw = os.environ.get('KATABUMP_COOKIE')
-    katabump_email = os.environ.get('KATABUMP_EMAIL')
-    katabump_password = os.environ.get('KATABUMP_PASSWORD')
+def run(playwright):
+    browser = playwright.chromium.launch(headless=True)
+    context = browser.new_context()
 
-    if not (katabump_cookie_raw or (katabump_email and katabump_password)):
-        print("错误: 未提供 Cookie 或账号密码。")
-        return False
+    page = context.new_page()
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page = context.new_page()
-        page.set_default_timeout(90000)
+    server_edit_url = "https://dashboard.katabump.com/servers/edit?id=105562"
 
+    # ✅ 尝试使用 cookies 登录
+    print("开始续期任务...")
+    katabump_cookie = os.getenv("KATABUMP_COOKIE", "").strip()
+    pterodactyl_email = os.getenv("KATABUMP_EMAIL", "").strip()
+    pterodactyl_password = os.getenv("KATABUMP_PASSWORD", "").strip()
+
+    if katabump_cookie:
+        print("正在尝试使用 Cookie 登录...")
         try:
-            login_success = False
-
-            # ----- 尝试 Cookie 登录 -----
-            if katabump_cookie_raw:
-                print("正在尝试使用 Cookie 登录...")
-
-                # 转换 cookie 字符串为列表
-                cookies = []
-                for part in katabump_cookie_raw.split(';'):
-                    if '=' in part:
-                        name, value = part.strip().split('=', 1)
-                        cookies.append({
-                            "name": name,
-                            "value": value,
-                            "domain": "dashboard.katabump.com",
-                            "path": "/",
-                            "httpOnly": False,
-                            "secure": True
-                        })
-
-                context.add_cookies(cookies)
-                page.goto(server_url, wait_until="domcontentloaded")
-
-                if "login" not in page.url:
-                    print("✅ Cookie 登录成功")
-                    login_success = True
-                else:
-                    print("⚠️ Cookie 登录失败，准备切换为账号密码登录。")
-                    page.screenshot(path="cookie_login_failed.png")
-
-            # ----- 如果 Cookie 失败，就尝试账号密码登录 -----
-            if not login_success:
-                if not (katabump_email and katabump_password):
-                    print("错误: Cookie 无效，且未提供账号密码。")
-                    browser.close()
-                    return False
-
-                login_url = "https://dashboard.katabump.com/auth/login"
-                print(f"访问登录页面: {login_url}")
-                page.goto(login_url, wait_until="domcontentloaded")
-
-                page.wait_for_selector('input[name="username"]')
-                page.wait_for_selector('input[name="password"]')
-                page.wait_for_selector('button[type="submit"]')
-
-                print("填写账号密码并提交...")
-                page.fill('input[name="username"]', katabump_email)
-                page.fill('input[name="password"]', katabump_password)
-
-                with page.expect_navigation(wait_until="domcontentloaded", timeout=60000):
-                    page.click('button[type="submit"]')
-
-                if "login" in page.url or "auth" in page.url:
-                    print("❌ 登录失败")
-                    page.screenshot(path="login_failed.png")
-                    browser.close()
-                    return False
-                else:
-                    print("✅ 账号密码登录成功")
-                    login_success = True
-
-            # ----- 导航到目标服务器页面 -----
-            print("进入服务器页面...")
-            page.goto(server_url, wait_until="domcontentloaded")
-
-            # 点击 Renew 按钮，等待弹窗
-            print("查找 Renew 按钮...")
-            page.click('text=Renew')
-            page.wait_for_selector('#renew-modal.show', timeout=10000)
-
-            # 等待 Turnstile 验证通过
-            print("等待 Cloudflare Turnstile 验证（如果有）...")
-            page.wait_for_function("""
-                () => {
-                    const el = document.querySelector('input[name="cf-turnstile-response"]');
-                    return el && el.value && el.value.length > 10;
-                }
-            """, timeout=15000)
-
-            print("点击弹窗中的 Renew 提交按钮...")
-            page.click('#renew-modal button[type="submit"]')
-
-            time.sleep(5)
-            print("✅ 续期成功")
-            browser.close()
-            return True
-
+            cookies = []
+            for item in katabump_cookie.split(";"):
+                name, value = item.strip().split("=", 1)
+                cookies.append({
+                    "name": name.strip(),
+                    "value": value.strip(),
+                    "domain": ".katabump.com",
+                    "path": "/"
+                })
+            context.add_cookies(cookies)
         except Exception as e:
-            print(f"发生错误: {e}")
-            try:
-                page.screenshot(path="general_error.png", full_page=True)
-                print("⚠️ 已保存页面截图 general_error.png")
-            except:
-                print("截图失败")
+            print(f"❌ Cookie 格式错误: {e}")
+            page.screenshot(path="invalid_cookie_format.png")
             browser.close()
-            return False
+            return
 
-if __name__ == "__main__":
-    print("开始执行续期任务...")
-    success = add_server_time()
-    exit(0 if success else 1)
+    try:
+        print("正在打开服务器页面...")
+        page.goto(server_edit_url, wait_until="domcontentloaded", timeout=90000)
+
+        # ⚠️ 检测是否跳转到登录页
+        if "auth/login" in page.url or "login" in page.url:
+            print("⚠️ Cookie 登录无效，尝试账号密码登录...")
+
+            if not pterodactyl_email or not pterodactyl_password:
+                print("❌ Cookie 无效，且未提供账号密码，无法登录")
+                page.screenshot(path="cookie_invalid_no_password.png")
+                browser.close()
+                return
+
+            # 执行账号密码登录
+            login_url = "https://dashboard.katabump.com/auth/login"
+            page.goto(login_url, wait_until="domcontentloaded", timeout=90000)
+
+            page.wait_for_selector('input[name="username"]')
+            page.fill('input[name="username"]', pterodactyl_email)
+            page.fill('input[name="password"]', pterodactyl_password)
+            page.click('button[type="submit"]')
+
+            # 登录后可能跳转
+            page.wait_for_load_state("domcontentloaded")
+            if "login" in page.url or "auth" in page.url:
+                print("❌ 邮箱密码登录失败")
+                page.screenshot(path="login_failed.png")
+                browser.close()
+                return
+            print("✅ 邮箱密码登录成功")
+
+        # 成功进入目标页
+        print("✅ 成功进入服务器编辑页面，等待 Turnstile 验证出现...")
+        page.wait_for_selector('iframe[src*="challenges.cloudflare.com"]', timeout=90000)
+        print("🔁 等待用户完成 Cloudflare 验证（手动或自动）...")
+        time.sleep(20)  # 如果你有破解机制可替换此等待
+
+        # 检查 Renew 按钮
+        renew_selector = "button:text-is('Renew')"
+        page.wait_for_selector(renew_selector, timeout=30000)
+        page.click(renew_selector)
+        print("✅ 点击 Renew 成功")
+
+        time.sleep(5)
+        browser.close()
+
+    except Exception as e:
+        print(f"发生错误: {e}")
+        page.screenshot(path="general_error.png")
+        browser.close()
+        exit(1)
+
+with sync_playwright() as playwright:
+    run(playwright)
