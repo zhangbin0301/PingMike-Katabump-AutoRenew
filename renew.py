@@ -47,28 +47,30 @@ def main():
             renew_btn.scroll_into_view_if_needed()
             renew_btn.click()
 
-            # 🪟 等待 Renew 弹窗和验证码 iframe 同时加载
-            print("🪟 等待 Renew 弹窗和验证码 iframe 同时加载...")
+            # ✅ 等待 Renew 弹窗出现
+            print("🪟 等待 Renew 弹窗显示...")
+            page.wait_for_selector("#renew-modal.show", timeout=15000)
+
+            # ✅ 等待 Cloudflare Turnstile iframe 出现
+            print("🔍 等待 Turnstile iframe 加载到页面中...")
             page.wait_for_function(
-                """() => {
-                    const modal = document.querySelector('#renew-modal.show');
-                    const iframe = modal && modal.querySelector('iframe');
-                    return iframe !== null;
-                }""",
+                "() => Array.from(document.querySelectorAll('iframe')).some(f => f.src.includes('turnstile'))",
                 timeout=30000
             )
 
-            # 🎯 获取 iframe 元素
-            captcha_frame = page.locator("#renew-modal iframe").first
+            # 🎯 获取 iframe
+            captcha_frame = page.locator("iframe").filter(
+                has=lambda el: "turnstile" in el.get_attribute("src") if el.get_attribute("src") else False
+            ).first
 
-            # 📸 截图 iframe 出现前的状态
+            # 📸 验证前截图
             safe_screenshot(page, "01_before_captcha_click.png")
 
-            # ⏳ 等待 iframe 渲染更稳定
+            # ⏳ 等待 iframe 渲染
             print("⏳ 等待 Turnstile iframe 渲染...")
             page.wait_for_timeout(2000)
 
-            # 🖱️ 模拟点击 iframe 中心位置
+            # 🖱️ 模拟点击 iframe 中心
             print("🖱️ 模拟点击 Turnstile 验证框中心...")
             box = captcha_frame.bounding_box()
             if box and box["width"] > 0 and box["height"] > 0:
@@ -91,13 +93,13 @@ def main():
             print("✅ 验证成功 ✅")
             safe_screenshot(page, "02_captcha_checked.png")
 
-            # 🚀 点击弹窗中的 Renew 提交按钮
+            # 🚀 点击 Renew 提交按钮
             print("🚀 点击弹窗中的 Renew 提交按钮...")
             modal_renew_btn = page.locator("#renew-modal button.btn-primary[type='submit']")
             modal_renew_btn.wait_for(state="visible", timeout=10000)
             modal_renew_btn.click()
 
-            # 🕵️ 检查成功提示
+            # 🕵️ 检查是否续期成功
             print("🕵️ 检查是否续期成功...")
             success_alert = page.locator("div.alert-success")
             success_alert.wait_for(timeout=10000)
