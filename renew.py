@@ -35,7 +35,7 @@ def main():
     print("✅ 开始执行续期任务...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)  # 调试时建议可视化
+        browser = p.chromium.launch(headless=True)  # 调试时建议可视化
         context = browser.new_context()
         page = context.new_page()
 
