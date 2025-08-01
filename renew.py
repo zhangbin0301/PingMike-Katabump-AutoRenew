@@ -39,7 +39,7 @@ def main():
             print("🎯 打开服务器编辑页面...")
             page.goto(RENEW_URL, timeout=20000)
             page.wait_for_load_state("domcontentloaded")
-            safe_screenshot(page, "01_before_renew.png")
+            safe_screenshot(page, "00_before_renew.png")
 
             # 点击 Renew 按钮
             print("🟦 点击页面上的第一个 Renew 按钮...")
@@ -47,27 +47,39 @@ def main():
             renew_btn.scroll_into_view_if_needed()
             renew_btn.click()
 
-            # 等待弹窗
+            # 等待 Renew 弹窗加载
             print("🪟 等待 Renew 弹窗加载...")
             page.wait_for_selector("#renew-modal.show", timeout=10000)
 
-            # 处理 Turnstile 验证
-            print("🔍 等待 Turnstile 验证 iframe 出现...")
-            captcha_frame = page.locator("#renew-modal iframe[title*='Cloudflare']")
-            captcha_frame.wait_for(timeout=30000)
+            # 等待 iframe 出现在 DOM 中（避免因 visible 判定失败）
+            print("🔍 等待 Turnstile iframe 加载进入 DOM...")
+            page.wait_for_function(
+                """() => document.querySelector('#renew-modal iframe') !== null""",
+                timeout=30000
+            )
 
-            print("🖱️ 模拟点击 Turnstile 复选框中心...")
+            # 获取 iframe（避免 title 选择器匹配失败）
+            captcha_frame = page.locator("#renew-modal iframe").first
+
+            # 截图验证框出现前的状态
+            safe_screenshot(page, "01_before_captcha_click.png")
+
+            # 稍作等待渲染
+            page.wait_for_timeout(1000)
+
+            # 模拟点击 iframe 中心位置
+            print("🖱️ 模拟点击 Turnstile 验证框中心...")
             box = captcha_frame.bounding_box()
-            if box:
+            if box and box["width"] > 0 and box["height"] > 0:
                 x = box["x"] + box["width"] / 2
                 y = box["y"] + box["height"] / 2
                 page.mouse.click(x, y)
                 print(f"✅ 已点击验证码框中心位置 ({x:.2f}, {y:.2f})")
             else:
-                raise Exception("无法获取 Turnstile iframe 的位置")
+                raise Exception("无法获取 Turnstile iframe 的位置或大小异常")
 
-            # 等待打勾完成
-            print("⏳ 等待验证成功（打勾）...")
+            # 等待打勾图标出现（验证成功）
+            print("⏳ 等待打勾图标出现（验证成功）...")
             page.wait_for_function(
                 """() => {
                     const span = document.querySelector('#renew-modal .ctp-icon-checkmark');
@@ -84,7 +96,7 @@ def main():
             modal_renew_btn.wait_for(state="visible", timeout=10000)
             modal_renew_btn.click()
 
-            # 等待成功提示
+            # 检查成功提示
             print("🕵️ 检查是否续期成功...")
             success_alert = page.locator("div.alert-success")
             success_alert.wait_for(timeout=10000)
