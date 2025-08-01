@@ -1,38 +1,41 @@
-name: Renew Katabump VPS
+name: Auto Renew Katabump
 
 on:
   schedule:
-    - cron: '0 0 */3 * *' # 每 3 天执行一次
+    - cron: '0 0 */3 * *'  # 每 3 天运行一次（UTC 时间）
   workflow_dispatch:
 
 jobs:
   renew:
     runs-on: ubuntu-latest
+    env:
+      KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
+      KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
+      KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
     steps:
-      - name: 📥 Checkout Repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 📦 Install Dependencies
+      - name: Install dependencies
         run: |
           pip install playwright
           playwright install chromium
 
-      - name: 🔄 Run Renew Script
-        env:
-          KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
-          KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
-          KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
-        run: |
-          mkdir -p screenshots
-          python renew.py
+      - name: Run renew script
+        run: python renew.py
 
-      - name: 📤 Upload Screenshots
+      - name: Upload screenshots
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: screenshots
+          path: |
+            before_renew.png
+            after_renew.png
+            timeout_error.png
+            exception.png
+        if: always()
