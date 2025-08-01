@@ -30,6 +30,7 @@ jobs:
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
+          KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
         run: python renew.py
 
       - name: Upload screenshot on failure
