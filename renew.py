@@ -1,13 +1,12 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import os
-import pathlib
 
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=128366"
 
-# 插件目录（提前解压到项目里 /extensions）
-EXT_PATH = str(pathlib.Path(__file__).parent / "extensions" / "captcha-solver")
+# 插件路径（必须和 yml 里解压一致）
+EXT_PATH = os.path.abspath("extensions/captcha-solver")
 
 def safe_screenshot(page, filename: str):
     try:
@@ -21,7 +20,7 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless="new",  # ⚠️ 插件必须非 headless
+            headless=False,  # 插件必须非 headless
             args=[
                 "--no-sandbox",
                 f"--disable-extensions-except={EXT_PATH}",
@@ -37,7 +36,7 @@ def main():
         page = context.new_page()
 
         try:
-            # 登录流程
+            # 登录
             print("🔐 打开登录页面...")
             page.goto("https://dashboard.katabump.com/login", timeout=30000)
             page.fill('input[name="email"]', EMAIL)
@@ -53,35 +52,42 @@ def main():
             safe_screenshot(page, "00_before_renew.png")
 
             # 点击 Renew 按钮
-            print("🟦 点击页面上的第一个 Renew 按钮...")
             renew_btn = page.locator("//button[contains(text(), 'Renew')]").first
             renew_btn.scroll_into_view_if_needed()
             renew_btn.click()
 
-            # ✅ 等待 Renew 弹窗出现
+            # 等待弹窗 & Turnstile iframe
             print("🪟 等待 Renew 弹窗显示...")
             page.wait_for_selector("#renew-modal.show", timeout=15000)
 
-            # ✅ 插件会自动处理 Turnstile，这里只要等验证通过
-            print("🤖 等待插件完成验证码验证...")
+            print("🔍 等待 Turnstile iframe...")
+            page.wait_for_function(
+                "() => Array.from(document.querySelectorAll('iframe')).some(f => f.src.includes('turnstile'))",
+                timeout=30000
+            )
+            safe_screenshot(page, "01_before_captcha.png")
+
+            # 给扩展一点时间自动处理
+            print("🤖 等待扩展自动验证...")
+            page.wait_for_timeout(10000)
+
+            # 检查是否验证成功
             page.wait_for_function(
                 """() => {
                     const span = document.querySelector('#renew-modal .ctp-icon-checkmark');
                     return span && getComputedStyle(span).display !== 'none';
                 }""",
-                timeout=60000  # 给插件足够时间
+                timeout=30000
             )
-            print("✅ 验证成功 ✅")
+            print("✅ 验证成功")
             safe_screenshot(page, "02_captcha_checked.png")
 
-            # 🚀 点击 Renew 提交按钮
-            print("🚀 点击弹窗中的 Renew 提交按钮...")
+            # 点击 Renew 提交按钮
             modal_renew_btn = page.locator("#renew-modal button.btn-primary[type='submit']")
             modal_renew_btn.wait_for(state="visible", timeout=10000)
             modal_renew_btn.click()
 
-            # 🕵️ 检查是否续期成功
-            print("🕵️ 检查是否续期成功...")
+            # 确认续期成功
             success_alert = page.locator("div.alert-success")
             success_alert.wait_for(timeout=10000)
             print(f"🎉 续期成功: {success_alert.inner_text()}")
@@ -94,7 +100,6 @@ def main():
             print(f"❌ 异常发生: {e}")
             safe_screenshot(page, "99_exception_error.png")
         finally:
-            print("🚪 关闭浏览器...")
             context.close()
             browser.close()
 
