@@ -21,7 +21,7 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=False,  # 插件必须非 headless
+            headless=False,
             args=[
                 "--no-sandbox",
                 f"--disable-extensions-except={EXT_PATH}",
@@ -54,31 +54,37 @@ def main():
             renew_btn = page.locator("//button[contains(text(), 'Renew')]").first
             renew_btn.scroll_into_view_if_needed()
             renew_btn.click()
-
-            # 等待弹窗显示
             page.wait_for_selector("#renew-modal.show", timeout=15000)
             safe_screenshot(page, "01_modal.png")
 
-            # 等待 Turnstile iframe 加载
-            print("🔍 等待 Turnstile iframe...")
-            page.wait_for_selector("iframe[src*='turnstile']", timeout=20000)
-            iframe = page.frame_locator("iframe[src*='turnstile']")
+            # 等待 Turnstile iframe 异步加载
+            print("🔍 等待 Turnstile iframe 出现...")
+            page.wait_for_function(
+                """
+                () => Array.from(document.querySelectorAll('iframe'))
+                        .some(f => f.src && f.src.includes('turnstile'))
+                """,
+                timeout=60000
+            )
+            safe_screenshot(page, "02_iframe_loaded.png")
 
-            # ✅ 核心优化：检测插件生成的 token
-            # 插件通常会在 iframe 内生成 input[name="cf-turnstile-response"] 或 span.checkmark
+            # 等待插件生成验证 token
             print("🤖 等待插件自动验证 Turnstile...")
             page.wait_for_function(
-                """() => {
-                    const iframeEl = document.querySelector('iframe[src*="turnstile"]');
+                """
+                () => {
+                    const iframeEl = Array.from(document.querySelectorAll('iframe'))
+                        .find(f => f.src && f.src.includes('turnstile'));
                     if (!iframeEl) return false;
                     const innerDoc = iframeEl.contentDocument || iframeEl.contentWindow.document;
                     const token = innerDoc.querySelector('input[name="cf-turnstile-response"]');
                     return token && token.value.length > 0;
-                }""",
-                timeout=60000  # 给插件足够时间
+                }
+                """,
+                timeout=90000
             )
+            safe_screenshot(page, "03_captcha_checked.png")
             print("✅ 插件已生成验证 token")
-            safe_screenshot(page, "02_captcha_checked.png")
 
             # 点击 Renew 提交按钮
             modal_renew_btn = page.locator("#renew-modal button.btn-primary[type='submit']")
@@ -89,7 +95,7 @@ def main():
             success_alert = page.locator("div.alert-success")
             success_alert.wait_for(timeout=10000)
             print(f"🎉 续期成功: {success_alert.inner_text()}")
-            safe_screenshot(page, "03_after_renew.png")
+            safe_screenshot(page, "04_after_renew.png")
 
         except PlaywrightTimeoutError as e:
             print(f"❌ 超时错误: {e}")
@@ -100,7 +106,6 @@ def main():
         finally:
             context.close()
             browser.close()
-
 
 if __name__ == "__main__":
     main()
