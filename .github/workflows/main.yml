@@ -25,7 +25,12 @@ jobs:
         run: |
           pip install playwright
           playwright install chromium
-
+      
+      - name: Download captcha solver extension
+        run: |
+          mkdir -p extensions
+          curl -L -o captcha.zip "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=115.0&x=id%3Dhlifkpholllijblknnmbfagnkjneagid%26installsource%3Dondemand%26uc"
+          unzip captcha.zip -d extensions/captcha-solver
       - name: Run renew script
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
