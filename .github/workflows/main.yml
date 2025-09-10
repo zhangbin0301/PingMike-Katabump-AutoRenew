@@ -1,12 +1,12 @@
 name: Renew Katabump
 
 on:
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:  # 手动触发
   schedule:
     - cron: '0 0 */3 * *'  # 每三天运行一次
   push:
     paths:
-      - 'renew.py'  # 仅当 renew.py 修改时触发
+      - 'renew.py'
 
 jobs:
   renew:
@@ -25,12 +25,16 @@ jobs:
         run: |
           pip install playwright
           playwright install chromium
-      
+
       - name: Download captcha solver extension
         run: |
           mkdir -p extensions
-          curl -L -o captcha.zip "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=115.0&x=id%3Dhlifkpholllijblknnmbfagnkjneagid%26installsource%3Dondemand%26uc"
+          curl -L -o captcha.crx "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=115.0&x=id%3Dhlifkpholllijblknnmbfagnkjneagid%26installsource%3Dondemand%26uc"
+          # CRX 文件前 312 字节是头部，去掉后才是 zip 格式
+          tail -c +313 captcha.crx > captcha.zip
           unzip captcha.zip -d extensions/captcha-solver
+          ls -R extensions/captcha-solver  # 调试用：确认插件内容解压成功
+
       - name: Run renew script
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
