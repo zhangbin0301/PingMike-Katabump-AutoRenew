@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -21,25 +21,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Playwright
+      - name: Install Playwright and browser
         run: |
           pip install playwright
           playwright install chromium
 
-      - name: Download captcha solver extension
+      - name: Unzip captcha solver extension
         run: |
-          mkdir -p extensions
-          curl -L -o captcha.crx "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=115.0&x=id%3Dhlifkpholllijblknnmbfagnkjneagid%26installsource%3Dondemand%26uc"
-          # 先尝试直接解压
-          unzip captcha.crx -d extensions/captcha-solver || {
-            echo "direct unzip failed, parsing extra bytes..."
-            # 获取提示的 extra bytes 数字
-            EXTRA=$(unzip -l captcha.crx 2>&1 | grep 'extra bytes' | awk '{print $1}')
-            SKIP=$((EXTRA + 1))
-            echo "Skipping $SKIP bytes from head"
-            tail -c +"$SKIP" captcha.crx > captcha.zip
-            unzip captcha.zip -d extensions/captcha-solver
-          }
+          mkdir -p extensions/captcha-solver
+          unzip Captcha.crx -d extensions/captcha-solver
           ls -R extensions/captcha-solver
 
       - name: Run renew script
@@ -49,18 +39,10 @@ jobs:
           KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
         run: python renew.py
 
-      - name: Upload screenshot on failure
+      - name: Upload screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: katabump_error_screenshot
-          path: |
-            *.png
-
-      - name: 上传错误截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-screenshots
           path: |
             *.png
