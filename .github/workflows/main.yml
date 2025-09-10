@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -21,28 +21,37 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Playwright and browser
+      - name: Install Playwright
         run: |
           pip install playwright
           playwright install chromium
 
-      - name: Unzip captcha solver extension
+      # 确保插件在 extensions/captcha-solver 目录
+      - name: Prepare Captcha Extension
         run: |
           mkdir -p extensions/captcha-solver
-          unzip captcha.crx -d extensions/captcha-solver || true
-          ls -R extensions/captcha-solver
+          unzip -o captcha.crx -d extensions/captcha-solver || true
+          ls -R extensions
 
       - name: Run renew script
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
           KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
-        run: python renew.py
+        run: xvfb-run -a python renew.py
 
-      - name: Upload screenshots on failure
+      - name: Upload screenshot on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: katabump_error_screenshot
+          path: |
+            *.png
+
+      - name: 上传错误截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshots
           path: |
             *.png
