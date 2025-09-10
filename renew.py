@@ -1,9 +1,13 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import os
+import pathlib
 
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
-RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=105562"
+RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=128366"
+
+# 插件目录（提前解压到项目里 /extensions）
+EXT_PATH = str(pathlib.Path(__file__).parent / "extensions" / "captcha-solver")
 
 def safe_screenshot(page, filename: str):
     try:
@@ -16,7 +20,14 @@ def main():
     print("✅ 开始执行续期任务...")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+        browser = p.chromium.launch(
+            headless=False,  # ⚠️ 插件必须非 headless
+            args=[
+                "--no-sandbox",
+                f"--disable-extensions-except={EXT_PATH}",
+                f"--load-extension={EXT_PATH}",
+            ],
+        )
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
@@ -51,44 +62,14 @@ def main():
             print("🪟 等待 Renew 弹窗显示...")
             page.wait_for_selector("#renew-modal.show", timeout=15000)
 
-            # ✅ 等待 Cloudflare Turnstile iframe 出现
-            print("🔍 等待 Turnstile iframe 加载到页面中...")
-            page.wait_for_function(
-                "() => Array.from(document.querySelectorAll('iframe')).some(f => f.src.includes('turnstile'))",
-                timeout=30000
-            )
-
-            # 🎯 获取 iframe
-            captcha_frame = page.locator("iframe").filter(
-                has=lambda el: "turnstile" in el.get_attribute("src") if el.get_attribute("src") else False
-            ).first
-
-            # 📸 验证前截图
-            safe_screenshot(page, "01_before_captcha_click.png")
-
-            # ⏳ 等待 iframe 渲染
-            print("⏳ 等待 Turnstile iframe 渲染...")
-            page.wait_for_timeout(2000)
-
-            # 🖱️ 模拟点击 iframe 中心
-            print("🖱️ 模拟点击 Turnstile 验证框中心...")
-            box = captcha_frame.bounding_box()
-            if box and box["width"] > 0 and box["height"] > 0:
-                x = box["x"] + box["width"] / 2
-                y = box["y"] + box["height"] / 2
-                page.mouse.click(x, y)
-                print(f"✅ 已点击验证码框中心位置 ({x:.2f}, {y:.2f})")
-            else:
-                raise Exception("❌ 无法获取 iframe 的位置或大小异常")
-
-            # ⏳ 等待打勾图标出现（验证成功）
-            print("⏳ 等待打勾图标出现（验证成功）...")
+            # ✅ 插件会自动处理 Turnstile，这里只要等验证通过
+            print("🤖 等待插件完成验证码验证...")
             page.wait_for_function(
                 """() => {
                     const span = document.querySelector('#renew-modal .ctp-icon-checkmark');
                     return span && getComputedStyle(span).display !== 'none';
                 }""",
-                timeout=30000
+                timeout=60000  # 给插件足够时间
             )
             print("✅ 验证成功 ✅")
             safe_screenshot(page, "02_captcha_checked.png")
