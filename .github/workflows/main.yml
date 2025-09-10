@@ -29,7 +29,7 @@ jobs:
       - name: Unzip captcha solver extension
         run: |
           mkdir -p extensions/captcha-solver
-          unzip captcha.crx -d extensions/captcha-solver || ture
+          unzip captcha.crx -d extensions/captcha-solver || true
           ls -R extensions/captcha-solver
 
       - name: Run renew script
