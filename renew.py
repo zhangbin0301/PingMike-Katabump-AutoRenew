@@ -21,7 +21,7 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=new,  # ⚠️ 插件必须非 headless
+            headless="new",  # ⚠️ 插件必须非 headless
             args=[
                 "--no-sandbox",
                 f"--disable-extensions-except={EXT_PATH}",
