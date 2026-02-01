@@ -2,7 +2,7 @@ name: Katabump Auto Renew
 
 on:
   schedule:
-    - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 09:00）
+    - cron: "0 1 */4 * *"   # 每 4 天一次（UTC 01:00，北京 09:00）
   workflow_dispatch:
 
 jobs:
@@ -27,16 +27,9 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: 🔁 Run renew script (every 4 days)
+      - name: 🔁 Run renew
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
         run: |
-          DAY=$(date +%s)
-          MOD=$(( DAY / 86400 % 4 ))
-          if [ "$MOD" -eq 0 ]; then
-            echo "✅ Today is renew day"
-            python renew.py
-          else
-            echo "⏭️ Not renew day, skip"
-          fi
+          python renew.py
