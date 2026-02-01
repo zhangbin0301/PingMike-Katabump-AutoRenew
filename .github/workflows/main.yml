@@ -2,8 +2,12 @@ name: Katabump Auto Renew
 
 on:
   schedule:
-    - cron: "0 1 */4 * *"   # 每 4 天一次（UTC 01:00，北京 09:00）
+    - cron: "0 18 * * *"   # 每天 UTC 01:00（北京时间 09:00）
   workflow_dispatch:
+
+# ⭐ 关键：授予写入仓库权限
+permissions:
+  contents: write
 
 jobs:
   renew:
@@ -11,7 +15,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: 📥 Checkout
+      - name: 📥 Checkout repo
         uses: actions/checkout@v4
 
       - name: 🐍 Setup Python
@@ -25,11 +29,37 @@ jobs:
           sudo apt-get install -y xvfb
           pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install chromium
 
-      - name: 🔁 Run renew
+      - name: 🚀 Run renew script
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
         run: |
           python renew.py
+
+      # ============================================
+      # ⏱️ 提交 time.txt 到仓库
+      # ============================================
+      - name: Commit time.txt to repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 如果 time.txt 不存在，说明是第一次运行
+          if [ ! -f time.txt ]; then
+            echo "首次生成时间：$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
+          else
+            echo "$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
+          fi
+
+          git add time.txt
+
+          # 如果有更改再提交
+          if git diff --cached --quiet; then
+            echo "无变化，无需提交"
+          else
+            git commit -m "⏱️ 更新时间文件: $(date +'%Y-%m-%d %H:%M:%S')"
+            git push origin HEAD:main
+          fi
