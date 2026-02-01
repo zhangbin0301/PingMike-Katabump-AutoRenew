@@ -1,57 +1,42 @@
-name: Renew Katabump
+name: Katabump Auto Renew
 
 on:
-  workflow_dispatch:  # 手动触发
   schedule:
-    - cron: '0 0 */3 * *'  # 每三天运行一次
-  push:
-    paths:
-      - 'renew.py'
+    - cron: "0 1 * * *"   # 每天 UTC 01:00（北京时间 09:00）
+  workflow_dispatch:
 
 jobs:
   renew:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.10"
 
-      - name: Install Playwright
+      - name: 📦 Install dependencies
         run: |
-          pip install playwright
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          pip install --upgrade pip
+          pip install -r requirements.txt
           playwright install chromium
 
-      # 确保插件在 extensions/captcha-solver 目录
-      - name: Prepare Captcha Extension
-        run: |
-          mkdir -p extensions/captcha-solver
-          unzip -o captcha.crx -d extensions/captcha-solver || true
-          ls -R extensions
-
-      - name: Run renew script
+      - name: 🔁 Run renew script (every 4 days)
         env:
           KATABUMP_EMAIL: ${{ secrets.KATABUMP_EMAIL }}
           KATABUMP_PASSWORD: ${{ secrets.KATABUMP_PASSWORD }}
-          KATABUMP_SERVER_ID: ${{ secrets.KATABUMP_SERVER_ID }}
-        run: xvfb-run -a python renew.py
-
-      - name: Upload screenshot on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: katabump_error_screenshot
-          path: |
-            *.png
-
-      - name: 上传错误截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-screenshots
-          path: |
-            *.png
+        run: |
+          DAY=$(date +%s)
+          MOD=$(( DAY / 86400 % 4 ))
+          if [ "$MOD" -eq 0 ]; then
+            echo "✅ Today is renew day"
+            python renew.py
+          else
+            echo "⏭️ Not renew day, skip"
+          fi
