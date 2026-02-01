@@ -1,26 +1,19 @@
 import os
 import time
 import platform
-from typing import Dict
-
 from seleniumbase import SB
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from pyvirtualdisplay import Display
 
 
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
 
 LOGIN_URL = "https://dashboard.katabump.com/login"
-HOME_URL = "https://dashboard.katabump.com/"
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=218445"
 
 
-# ============================================================
-# Linux (GitHub Actions) 虚拟显示
-# ============================================================
 def setup_xvfb():
     if platform.system().lower() == "linux" and not os.environ.get("DISPLAY"):
-        from pyvirtualdisplay import Display
         display = Display(visible=False, size=(1920, 1080))
         display.start()
         os.environ["DISPLAY"] = display.new_display_var
@@ -29,118 +22,54 @@ def setup_xvfb():
     return None
 
 
-# ============================================================
-# Step 1: SeleniumBase UC 过 Cloudflare
-# ============================================================
-def get_cf_session() -> Dict:
-    print("🛡️ SeleniumBase UC 绕过 Cloudflare")
-
-    with SB(
-        uc=True,
-        headless=True,
-        locale="en",
-        disable_csp=True,
-    ) as sb:
-        sb.uc_open_with_reconnect(HOME_URL, reconnect_time=5)
-        time.sleep(3)
-
-        page = sb.get_page_source().lower()
-        if any(x in page for x in ["cloudflare", "turnstile", "just a moment"]):
-            print("🔍 检测到 CF，尝试自动验证")
-            try:
-                sb.uc_gui_click_captcha()
-                time.sleep(5)
-            except Exception as e:
-                print(f"⚠️ 验证点击异常（可能不需要）: {e}")
-
-        cookies = sb.get_cookies()
-        ua = sb.execute_script("return navigator.userAgent")
-        cookie_map = {c["name"]: c["value"] for c in cookies}
-
-        if "cf_clearance" not in cookie_map:
-            raise RuntimeError("❌ 未获取 cf_clearance（IP 可能被风控）")
-
-        print("✅ cf_clearance 获取成功")
-        return {"cookies": cookies, "user_agent": ua}
-
-
-# ============================================================
-# Step 2: Playwright 注入 Cookie，执行续期
-# ============================================================
-def renew_with_playwright(cf_data: Dict):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox"],
-        )
-
-        context = browser.new_context(
-            user_agent=cf_data["user_agent"],
-            locale="en-US",
-            viewport={"width": 1280, "height": 800},
-        )
-
-        context.add_cookies([
-            {
-                "name": c["name"],
-                "value": c["value"],
-                "domain": c["domain"],
-                "path": c.get("path", "/"),
-                "httpOnly": c.get("httpOnly", False),
-                "secure": c.get("secure", False),
-            }
-            for c in cf_data["cookies"]
-        ])
-
-        page = context.new_page()
-
-        try:
-            print("🔐 登录 katabump")
-            page.goto(LOGIN_URL, timeout=30000)
-            page.fill('input[name="email"]', EMAIL)
-            page.fill('input[name="password"]', PASSWORD)
-            page.click('button[type="submit"]')
-            page.wait_for_url("**/dashboard", timeout=20000)
-
-            print("🔁 打开续期页面")
-            page.goto(RENEW_URL, timeout=20000)
-            page.wait_for_load_state("domcontentloaded")
-
-            renew_btn = page.locator("//button[contains(text(), 'Renew')]").first
-            renew_btn.scroll_into_view_if_needed()
-            renew_btn.click()
-
-            page.wait_for_selector("#renew-modal.show", timeout=15000)
-
-            print("✅ 已绕过 CF，提交续期")
-            submit_btn = page.locator(
-                "#renew-modal button.btn-primary[type='submit']"
-            )
-            submit_btn.wait_for(state="visible", timeout=10000)
-            submit_btn.click()
-
-            success = page.locator("div.alert-success")
-            success.wait_for(timeout=15000)
-
-            print("🎉 续期成功")
-            print(success.inner_text())
-
-        except PlaywrightTimeoutError as e:
-            raise RuntimeError(f"❌ Playwright 超时: {e}")
-        finally:
-            context.close()
-            browser.close()
-
-
 def main():
     if not EMAIL or not PASSWORD:
-        raise RuntimeError("❌ 未设置 KATABUMP_EMAIL / PASSWORD")
+        raise RuntimeError("❌ 缺少账号环境变量")
 
     display = setup_xvfb()
 
     try:
-        cf_data = get_cf_session()
-        renew_with_playwright(cf_data)
+        with SB(
+            uc=True,
+            headless=True,
+            locale="en",
+        ) as sb:
+            print("🚀 启动浏览器")
+
+            # 登录
+            print("🔐 登录 katabump")
+            sb.open(LOGIN_URL)
+            sb.type('input[name="email"]', EMAIL)
+            sb.type('input[name="password"]', PASSWORD)
+            sb.click('button[type="submit"]')
+            sb.wait_for_element_visible("body", timeout=20)
+
+            # 打开续期页面
+            print("🔁 打开续期页面")
+            sb.open(RENEW_URL)
+            sb.sleep(2)
+
+            # 点击 Renew
+            print("🖱️ 点击 Renew")
+            sb.find_element("//button[contains(text(),'Renew')]").click()
+            sb.wait_for_element_visible("#renew-modal", timeout=20)
+
+            # 🔥 关键：此时才处理 Turnstile
+            print("🛡️ 处理 Turnstile（确认框）")
+            try:
+                sb.uc_gui_click_captcha()
+                sb.sleep(4)
+            except Exception as e:
+                print(f"⚠️ Turnstile 点击异常（可能已自动通过）: {e}")
+
+            # 点击最终确认 Renew
+            print("✅ 提交 Renew")
+            sb.click("#renew-modal button.btn-primary[type='submit']")
+
+            # 等成功提示（比 alert-success 更稳）
+            sb.wait_for_text_visible("success", timeout=20)
+            print("🎉 续期成功")
+
     finally:
         if display:
             display.stop()
