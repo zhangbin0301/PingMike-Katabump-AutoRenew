@@ -1,5 +1,6 @@
 import os
 import platform
+import time
 from seleniumbase import SB
 from pyvirtualdisplay import Display
 
@@ -26,13 +27,7 @@ def setup_xvfb():
 def screenshot(sb, name):
     path = f"{SCREENSHOT_DIR}/{name}"
     sb.save_screenshot(path)
-    print(f"📸 截图保存: {path}")
-
-
-def get_expiry(sb):
-    return sb.get_text(
-        "//div[contains(text(),'Expiry')]/following-sibling::div"
-    ).strip()
+    print(f"📸 {path}")
 
 
 def main():
@@ -42,74 +37,71 @@ def main():
     display = setup_xvfb()
 
     try:
-        with SB(uc=True, headless=True, locale="en") as sb:
-            print("🚀 启动浏览器")
+        # ⚠️ 关键变化：不显式 headless
+        with SB(uc=True, locale="en", test=True) as sb:
+            print("🚀 浏览器启动（UC Mode）")
 
-            # ========= 登录 =========
-            sb.open(LOGIN_URL)
-            sb.type('input[name="email"]', EMAIL)
-            sb.type('input[name="password"]', PASSWORD)
+            # ===== 登录页（用 uc_open_with_reconnect）=====
+            sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=5.0)
+            time.sleep(2)
+
+            sb.type('input[name="email"]', EMAIL, delay=0.05)
+            sb.type('input[name="password"]', PASSWORD, delay=0.05)
             sb.click('button[type="submit"]')
-            sb.wait_for_element_visible("body", timeout=20)
 
-            # ========= 打开续期页面 =========
-            sb.open(RENEW_URL)
-            sb.wait_for_element_visible("body", timeout=20)
-            screenshot(sb, "01_before_renew.png")
+            sb.wait_for_element_visible("body", timeout=30)
+            time.sleep(2)
 
-            old_expiry = get_expiry(sb)
-            print("📅 旧 Expiry:", old_expiry)
+            # ===== 打开续期页（仍然用 reconnect）=====
+            sb.uc_open_with_reconnect(RENEW_URL, reconnect_time=5.0)
+            sb.wait_for_element_visible("body", timeout=30)
+            time.sleep(2)
 
-            # ========= 打开 Renew Modal =========
+            screenshot(sb, "01_page_loaded.png")
+
+            # ===== 打开 Renew Modal =====
             sb.click("button:contains('Renew')")
             sb.wait_for_element_visible("#renew-modal", timeout=20)
+            time.sleep(2)
+
             screenshot(sb, "02_modal_open.png")
 
-            # ========= Turnstile =========
+            # ===== 尝试 Turnstile 交互（不强求）=====
             try:
                 sb.uc_gui_click_captcha()
-                sb.sleep(3)
+                time.sleep(4)
             except Exception as e:
-                print(f"⚠️ Turnstile 点击异常（可能被 CF 静默拦截）: {e}")
+                print(f"⚠️ captcha 点击异常: {e}")
 
-            screenshot(sb, "03_after_turnstile.png")
+            screenshot(sb, "03_after_captcha.png")
 
-            # ========= 获取 Turnstile token（修复版） =========
-            token = sb.execute_script("""
-(() => {
-  const el = document.querySelector("input[name='cf-turnstile-response']");
-  return el ? el.value : null;
-})()
-""")
+            # ===== 观察 cookies（而不是强依赖 token）=====
+            cookies = sb.get_cookies()
+            cookie_names = [c["name"] for c in cookies]
 
-            print("🧩 Turnstile token:", token)
+            print("🍪 Cookies:", cookie_names)
 
-            if not token:
-                screenshot(sb, "04_turnstile_failed.png")
-                print("❌ Turnstile 未通过，Cloudflare 阻止了自动化")
+            cf_clearance = next(
+                (c["value"] for c in cookies if c["name"] == "cf_clearance"),
+                None
+            )
+
+            print("🧩 cf_clearance:", cf_clearance)
+
+            if not cf_clearance:
+                print("❌ 未获取 cf_clearance（Cloudflare 可能未放行）")
+                screenshot(sb, "04_no_cf_clearance.png")
                 return
 
-            # ========= 提交 form（关键） =========
+            # ===== 提交 Renew =====
             sb.execute_script("""
-document.querySelector('#renew-modal form').submit();
-""")
+                document.querySelector('#renew-modal form').submit();
+            """)
 
-            sb.sleep(2)
+            time.sleep(3)
             screenshot(sb, "05_after_submit.png")
 
-            # ========= 刷新并验证 Expiry =========
-            sb.refresh()
-            sb.wait_for_element_visible("body", timeout=20)
-            screenshot(sb, "06_after_refresh.png")
-
-            new_expiry = get_expiry(sb)
-            print("📅 新 Expiry:", new_expiry)
-
-            if new_expiry == old_expiry:
-                print("❌ Expiry 未变化，续期失败")
-                return
-
-            print("🎉 续期真实成功")
+            print("ℹ️ 已尝试提交续期（结果需以后端为准）")
 
     finally:
         if display:
