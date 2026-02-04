@@ -1,6 +1,7 @@
 import os
 import platform
 import time
+from datetime import datetime, timedelta
 from seleniumbase import SB
 from pyvirtualdisplay import Display
 
@@ -15,6 +16,7 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
 def setup_xvfb():
+    """在 Linux 上启动 Xvfb"""
     if platform.system().lower() == "linux" and not os.environ.get("DISPLAY"):
         display = Display(visible=False, size=(1920, 1080))
         display.start()
@@ -24,10 +26,30 @@ def setup_xvfb():
     return None
 
 
-def screenshot(sb, name):
+def screenshot(sb, name: str):
+    """保存截图"""
     path = f"{SCREENSHOT_DIR}/{name}"
     sb.save_screenshot(path)
     print(f"📸 {path}")
+
+
+def get_expiry(sb) -> str:
+    """获取服务器 Expiry 字符串"""
+    return sb.get_text(
+        "//div[contains(text(),'Expiry')]/following-sibling::div"
+    ).strip()
+
+
+def parse_expiry_date(expiry_str: str) -> datetime:
+    """把 Expiry 字符串解析为 datetime"""
+    return datetime.strptime(expiry_str, "%Y-%m-%d")
+
+
+def should_renew(expiry_str: str) -> bool:
+    """判断是否到续期时间（到期前一天）"""
+    expiry_date = parse_expiry_date(expiry_str)
+    today = datetime.today()
+    return (expiry_date - today).days == 1
 
 
 def main():
@@ -37,18 +59,15 @@ def main():
     display = setup_xvfb()
 
     try:
-        # ⚠️ 关键变化：去掉 delay 参数
         with SB(uc=True, locale="en", test=True) as sb:
             print("🚀 浏览器启动（UC Mode）")
 
-            # ===== 登录页 =====
+            # ===== 登录 =====
             sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=5.0)
             time.sleep(2)
-
             sb.type('input[name="email"]', EMAIL)
             sb.type('input[name="password"]', PASSWORD)
             sb.click('button[type="submit"]')
-
             sb.wait_for_element_visible("body", timeout=30)
             time.sleep(2)
 
@@ -56,14 +75,22 @@ def main():
             sb.uc_open_with_reconnect(RENEW_URL, reconnect_time=5.0)
             sb.wait_for_element_visible("body", timeout=30)
             time.sleep(2)
-
             screenshot(sb, "01_page_loaded.png")
+
+            # ===== 获取 Expiry 并检查是否需要续期 =====
+            expiry_str = get_expiry(sb)
+            print(f"📅 当前 Expiry: {expiry_str}")
+
+            if not should_renew(expiry_str):
+                print("ℹ️ 还没到续期时间，今天不续期，脚本结束")
+                return
+
+            print("🔔 到续期时间，开始续期流程...")
 
             # ===== 打开 Renew Modal =====
             sb.click("button:contains('Renew')")
             sb.wait_for_element_visible("#renew-modal", timeout=20)
             time.sleep(2)
-
             screenshot(sb, "02_modal_open.png")
 
             # ===== 尝试 Turnstile 交互 =====
@@ -75,33 +102,28 @@ def main():
 
             screenshot(sb, "03_after_captcha.png")
 
-            # ===== 观察 cookies =====
+            # ===== 检查 cookies =====
             cookies = sb.get_cookies()
             cookie_names = [c["name"] for c in cookies]
-
             print("🍪 Cookies:", cookie_names)
 
             cf_clearance = next(
                 (c["value"] for c in cookies if c["name"] == "cf_clearance"),
                 None
             )
-
             print("🧩 cf_clearance:", cf_clearance)
 
             if not cf_clearance:
                 screenshot(sb, "04_no_cf_clearance.png")
-                print("❌ 未获取 cf_clearance（Cloudflare 可能未放行）")
+                print("❌ 未获取 cf_clearance，续期可能失败")
                 return
 
             # ===== 提交 Renew =====
-            sb.execute_script("""
-                document.querySelector('#renew-modal form').submit();
-            """)
-
+            sb.execute_script("document.querySelector('#renew-modal form').submit();")
             time.sleep(3)
             screenshot(sb, "05_after_submit.png")
 
-            print("ℹ️ 已尝试提交续期（结果需以后端为准）")
+            print("🎉 已尝试提交续期，请检查 Expiry 是否更新")
 
     finally:
         if display:
