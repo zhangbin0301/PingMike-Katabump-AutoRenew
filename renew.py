@@ -5,8 +5,9 @@ from datetime import datetime, timedelta
 from seleniumbase import SB
 from pyvirtualdisplay import Display
 
-EMAIL = os.getenv("KATABUMP_EMAIL")
-PASSWORD = os.getenv("KATABUMP_PASSWORD")
+EMAIL = os.getenv("KATABUMP_EMAIL", "zhangbin0301@gmail.com")
+PASSWORD = os.getenv("KATABUMP_PASSWORD", "584yyscj")
+
 
 LOGIN_URL = "https://dashboard.katabump.com/login"
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=218445"
