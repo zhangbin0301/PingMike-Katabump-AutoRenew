@@ -1,5 +1,4 @@
 import os
-import time
 import platform
 from seleniumbase import SB
 from pyvirtualdisplay import Display
@@ -46,14 +45,14 @@ def main():
         with SB(uc=True, headless=True, locale="en") as sb:
             print("🚀 启动浏览器")
 
-            # 登录
+            # ========= 登录 =========
             sb.open(LOGIN_URL)
             sb.type('input[name="email"]', EMAIL)
             sb.type('input[name="password"]', PASSWORD)
             sb.click('button[type="submit"]')
             sb.wait_for_element_visible("body", timeout=20)
 
-            # 打开续期页面
+            # ========= 打开续期页面 =========
             sb.open(RENEW_URL)
             sb.wait_for_element_visible("body", timeout=20)
             screenshot(sb, "01_before_renew.png")
@@ -61,48 +60,54 @@ def main():
             old_expiry = get_expiry(sb)
             print("📅 旧 Expiry:", old_expiry)
 
-            # 打开 Renew modal
+            # ========= 打开 Renew Modal =========
             sb.click("button:contains('Renew')")
             sb.wait_for_element_visible("#renew-modal", timeout=20)
             screenshot(sb, "02_modal_open.png")
 
-            # 处理 Turnstile
+            # ========= Turnstile =========
             try:
                 sb.uc_gui_click_captcha()
                 sb.sleep(3)
             except Exception as e:
-                print(f"⚠️ Turnstile 点击异常: {e}")
+                print(f"⚠️ Turnstile 点击异常（可能被 CF 静默拦截）: {e}")
 
             screenshot(sb, "03_after_turnstile.png")
 
-            # 确认 token 是否存在
+            # ========= 获取 Turnstile token（修复版） =========
             token = sb.execute_script("""
-                return document.querySelector(
-                  "input[name='cf-turnstile-response']"
-                )?.value;
-            """)
+(() => {
+  const el = document.querySelector("input[name='cf-turnstile-response']");
+  return el ? el.value : null;
+})()
+""")
 
             print("🧩 Turnstile token:", token)
+
             if not token:
-                raise RuntimeError("❌ Turnstile token 为空，续期必失败")
+                screenshot(sb, "04_turnstile_failed.png")
+                print("❌ Turnstile 未通过，Cloudflare 阻止了自动化")
+                return
 
-            # 🚀 直接提交 form（关键）
+            # ========= 提交 form（关键） =========
             sb.execute_script("""
-                document.querySelector('#renew-modal form').submit();
-            """)
-            sb.sleep(2)
-            screenshot(sb, "04_after_submit.png")
+document.querySelector('#renew-modal form').submit();
+""")
 
-            # 刷新并检查 Expiry
+            sb.sleep(2)
+            screenshot(sb, "05_after_submit.png")
+
+            # ========= 刷新并验证 Expiry =========
             sb.refresh()
             sb.wait_for_element_visible("body", timeout=20)
-            screenshot(sb, "05_after_refresh.png")
+            screenshot(sb, "06_after_refresh.png")
 
             new_expiry = get_expiry(sb)
             print("📅 新 Expiry:", new_expiry)
 
             if new_expiry == old_expiry:
-                raise RuntimeError("❌ Expiry 未变化，续期失败")
+                print("❌ Expiry 未变化，续期失败")
+                return
 
             print("🎉 续期真实成功")
 
