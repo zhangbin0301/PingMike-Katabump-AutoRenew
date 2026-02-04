@@ -4,12 +4,14 @@ import platform
 from seleniumbase import SB
 from pyvirtualdisplay import Display
 
-
 EMAIL = os.getenv("KATABUMP_EMAIL")
 PASSWORD = os.getenv("KATABUMP_PASSWORD")
 
 LOGIN_URL = "https://dashboard.katabump.com/login"
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=218445"
+
+SCREENSHOT_DIR = "screenshots"
+os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
 def setup_xvfb():
@@ -22,6 +24,18 @@ def setup_xvfb():
     return None
 
 
+def screenshot(sb, name):
+    path = f"{SCREENSHOT_DIR}/{name}"
+    sb.save_screenshot(path)
+    print(f"📸 截图保存: {path}")
+
+
+def get_expiry(sb):
+    return sb.get_text(
+        "//div[contains(text(),'Expiry')]/following-sibling::div"
+    ).strip()
+
+
 def main():
     if not EMAIL or not PASSWORD:
         raise RuntimeError("❌ 缺少账号环境变量")
@@ -29,15 +43,10 @@ def main():
     display = setup_xvfb()
 
     try:
-        with SB(
-            uc=True,
-            headless=True,
-            locale="en",
-        ) as sb:
+        with SB(uc=True, headless=True, locale="en") as sb:
             print("🚀 启动浏览器")
 
             # 登录
-            print("🔐 登录 katabump")
             sb.open(LOGIN_URL)
             sb.type('input[name="email"]', EMAIL)
             sb.type('input[name="password"]', PASSWORD)
@@ -45,30 +54,57 @@ def main():
             sb.wait_for_element_visible("body", timeout=20)
 
             # 打开续期页面
-            print("🔁 打开续期页面")
             sb.open(RENEW_URL)
-            sb.sleep(2)
+            sb.wait_for_element_visible("body", timeout=20)
+            screenshot(sb, "01_before_renew.png")
 
-            # 点击 Renew
-            print("🖱️ 点击 Renew")
-            sb.find_element("//button[contains(text(),'Renew')]").click()
+            old_expiry = get_expiry(sb)
+            print("📅 旧 Expiry:", old_expiry)
+
+            # 打开 Renew modal
+            sb.click("button:contains('Renew')")
             sb.wait_for_element_visible("#renew-modal", timeout=20)
+            screenshot(sb, "02_modal_open.png")
 
-            # 🔥 关键：此时才处理 Turnstile
-            print("🛡️ 处理 Turnstile（确认框）")
+            # 处理 Turnstile
             try:
                 sb.uc_gui_click_captcha()
-                sb.sleep(4)
+                sb.sleep(3)
             except Exception as e:
-                print(f"⚠️ Turnstile 点击异常（可能已自动通过）: {e}")
+                print(f"⚠️ Turnstile 点击异常: {e}")
 
-            # 点击最终确认 Renew
-            print("✅ 提交 Renew")
-            sb.click("#renew-modal button.btn-primary[type='submit']")
+            screenshot(sb, "03_after_turnstile.png")
 
-            # 等成功提示（比 alert-success 更稳）
-            sb.wait_for_text_visible("success", timeout=20)
-            print("🎉 续期成功")
+            # 确认 token 是否存在
+            token = sb.execute_script("""
+                return document.querySelector(
+                  "input[name='cf-turnstile-response']"
+                )?.value;
+            """)
+
+            print("🧩 Turnstile token:", token)
+            if not token:
+                raise RuntimeError("❌ Turnstile token 为空，续期必失败")
+
+            # 🚀 直接提交 form（关键）
+            sb.execute_script("""
+                document.querySelector('#renew-modal form').submit();
+            """)
+            sb.sleep(2)
+            screenshot(sb, "04_after_submit.png")
+
+            # 刷新并检查 Expiry
+            sb.refresh()
+            sb.wait_for_element_visible("body", timeout=20)
+            screenshot(sb, "05_after_refresh.png")
+
+            new_expiry = get_expiry(sb)
+            print("📅 新 Expiry:", new_expiry)
+
+            if new_expiry == old_expiry:
+                raise RuntimeError("❌ Expiry 未变化，续期失败")
+
+            print("🎉 续期真实成功")
 
     finally:
         if display:
