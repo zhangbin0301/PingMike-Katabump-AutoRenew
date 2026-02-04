@@ -37,22 +37,22 @@ def main():
     display = setup_xvfb()
 
     try:
-        # ⚠️ 关键变化：不显式 headless
+        # ⚠️ 关键变化：去掉 delay 参数
         with SB(uc=True, locale="en", test=True) as sb:
             print("🚀 浏览器启动（UC Mode）")
 
-            # ===== 登录页（用 uc_open_with_reconnect）=====
+            # ===== 登录页 =====
             sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=5.0)
             time.sleep(2)
 
-            sb.type('input[name="email"]', EMAIL, delay=0.05)
-            sb.type('input[name="password"]', PASSWORD, delay=0.05)
+            sb.type('input[name="email"]', EMAIL)
+            sb.type('input[name="password"]', PASSWORD)
             sb.click('button[type="submit"]')
 
             sb.wait_for_element_visible("body", timeout=30)
             time.sleep(2)
 
-            # ===== 打开续期页（仍然用 reconnect）=====
+            # ===== 打开续期页 =====
             sb.uc_open_with_reconnect(RENEW_URL, reconnect_time=5.0)
             sb.wait_for_element_visible("body", timeout=30)
             time.sleep(2)
@@ -66,7 +66,7 @@ def main():
 
             screenshot(sb, "02_modal_open.png")
 
-            # ===== 尝试 Turnstile 交互（不强求）=====
+            # ===== 尝试 Turnstile 交互 =====
             try:
                 sb.uc_gui_click_captcha()
                 time.sleep(4)
@@ -75,7 +75,7 @@ def main():
 
             screenshot(sb, "03_after_captcha.png")
 
-            # ===== 观察 cookies（而不是强依赖 token）=====
+            # ===== 观察 cookies =====
             cookies = sb.get_cookies()
             cookie_names = [c["name"] for c in cookies]
 
@@ -89,8 +89,8 @@ def main():
             print("🧩 cf_clearance:", cf_clearance)
 
             if not cf_clearance:
-                print("❌ 未获取 cf_clearance（Cloudflare 可能未放行）")
                 screenshot(sb, "04_no_cf_clearance.png")
+                print("❌ 未获取 cf_clearance（Cloudflare 可能未放行）")
                 return
 
             # ===== 提交 Renew =====
