@@ -10,7 +10,7 @@ PASSWORD = os.getenv("KATABUMP_PASSWORD", "584yyscj")
 
 
 LOGIN_URL = "https://dashboard.katabump.com/login"
-RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=218445"
+RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=220210"
 
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
