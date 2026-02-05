@@ -20,7 +20,6 @@ jobs:
         with:
           # 注意：如果是本仓库，可以直接去掉 repository 那行，更简洁
           repository: ${{ github.repository_owner }}/PingMike-Katabump-AutoRenew
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           fetch-depth: 0      
 
       - name: 🐍 Setup Python
