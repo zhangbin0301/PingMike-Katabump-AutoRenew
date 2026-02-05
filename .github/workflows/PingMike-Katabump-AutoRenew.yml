@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write  # 允许修改 cookie.txt
+  actions: write   # 允许清理 workflow 记录
 
 jobs:
   renew:
@@ -16,6 +17,11 @@ jobs:
     steps:
       - name: 📥 Checkout repo
         uses: actions/checkout@v4
+        with:
+          # 注意：如果是本仓库，可以直接去掉 repository 那行，更简洁
+          repository: ${{ github.repository_owner }}/PingMike-Katabump-AutoRenew
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          fetch-depth: 0      
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
