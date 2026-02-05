@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 from seleniumbase import SB
 from pyvirtualdisplay import Display
 
-EMAIL = os.getenv("KATABUMP_EMAIL", "")
-PASSWORD = os.getenv("KATABUMP_PASSWORD", "")
+EMAIL = os.getenv("KATABUMP_EMAIL") or ""
+PASSWORD = os.getenv("KATABUMP_PASSWORD") or ""
 
-TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or ""
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID") or ""
 
 LOGIN_URL = "https://dashboard.katabump.com/login"
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=220210"
@@ -20,13 +20,13 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 def send_tg_msg(message: str):
     """通过 Telegram Bot 发送消息"""
-    if not TG_TOKEN or not TG_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ 未配置 TG 环境变量，跳过通知")
         return
     
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TG_CHAT_ID,
+        "chat_id": TELEGRAM_CHAT_ID,
         "text": f"🤖 **Katabump 自动续期通知**\n\n{message}",
         "parse_mode": "Markdown"
     }
