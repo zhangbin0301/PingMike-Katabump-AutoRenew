@@ -1,4 +1,4 @@
-name: Katabump Auto Renew
+name: PingMike-Katabump-AutoRenew
 
 on:
   schedule:
