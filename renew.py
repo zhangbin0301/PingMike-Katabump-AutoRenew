@@ -1,6 +1,7 @@
 import os
 import platform
 import time
+import requests
 from datetime import datetime, timedelta
 from seleniumbase import SB
 from pyvirtualdisplay import Display
@@ -8,6 +9,8 @@ from pyvirtualdisplay import Display
 EMAIL = os.getenv("KATABUMP_EMAIL", "")
 PASSWORD = os.getenv("KATABUMP_PASSWORD", "")
 
+TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 LOGIN_URL = "https://dashboard.katabump.com/login"
 RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=220210"
@@ -15,6 +18,22 @@ RENEW_URL = "https://dashboard.katabump.com/servers/edit?id=220210"
 SCREENSHOT_DIR = "screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
+def send_tg_msg(message: str):
+    """通过 Telegram Bot 发送消息"""
+    if not TG_TOKEN or not TG_CHAT_ID:
+        print("⚠️ 未配置 TG 环境变量，跳过通知")
+        return
+    
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TG_CHAT_ID,
+        "text": f"🤖 **Katabump 自动续期通知**\n\n{message}",
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"❌ TG 发送失败: {e}")
 
 def setup_xvfb():
     """在 Linux 上启动 Xvfb"""
@@ -83,7 +102,13 @@ def main():
             print(f"📅 当前 Expiry: {expiry_str}")
 
             if not should_renew(expiry_str):
+                idle_msg = (
+                    f"ℹ️ *Katabump 状态检查*\n"
+                    f"📅 当前到期: `{expiry_str}`\n"
+                    f"⏳ 还没到续期时间，今天不操作。"
+                )
                 print("ℹ️ 还没到续期时间，今天不续期，脚本结束")
+                send_tg_msg(idle_msg)
                 return
 
             print("🔔 到续期时间，开始续期流程...")
@@ -124,12 +149,30 @@ def main():
             time.sleep(3)
             screenshot(sb, "05_after_submit.png")
 
-            print("🎉 已尝试提交续期，请检查 Expiry 是否更新")
+            sb.refresh()
+            time.sleep(3)
+            new_expiry = get_expiry(sb)
+            
+            final_msg = (
+                f"✅ *Katabump 续期成功*\n"
+                f"📅 *原到期日:* `{expiry_str}`\n"
+                f"📅 *新到期日:* `{new_expiry}`\n"
+                f"⏰ *执行时间:* {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            )
+            print(final_msg)
+            send_tg_msg(final_msg)
+
+    except Exception as e:
+        fail_msg = (
+            f"💥 *Katabump 脚本运行出错*\n"
+            f"❌ 错误信息: `{str(e)}`"
+            )
+        print(fail_msg)
+        send_tg_msg(fail_msg)    
 
     finally:
         if display:
             display.stop()
-
 
 if __name__ == "__main__":
     main()
