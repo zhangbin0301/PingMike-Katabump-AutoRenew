@@ -27,7 +27,7 @@ def send_tg_msg(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": f"🤖 **Katabump 自动续期通知**\n\n{message}",
+        "text": f"🤖 **Katabump 自动续期通知**\n{message}",
         "parse_mode": "Markdown"
     }
     try:
