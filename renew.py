@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from seleniumbase import SB
 from pyvirtualdisplay import Display
 
+# ===== 环境变量配置 =====
 EMAIL = os.getenv("KATABUMP_EMAIL") or ""
 PASSWORD = os.getenv("KATABUMP_PASSWORD") or ""
 
@@ -45,13 +46,11 @@ def setup_xvfb():
         return display
     return None
 
-
 def screenshot(sb, name: str):
     """保存截图"""
     path = f"{SCREENSHOT_DIR}/{name}"
     sb.save_screenshot(path)
     print(f"📸 {path}")
-
 
 def get_expiry(sb) -> str:
     """获取服务器 Expiry 字符串"""
@@ -59,21 +58,20 @@ def get_expiry(sb) -> str:
         "//div[contains(text(),'Expiry')]/following-sibling::div"
     ).strip()
 
-
 def parse_expiry_date(expiry_str: str) -> datetime:
     """把 Expiry 字符串解析为 datetime"""
     return datetime.strptime(expiry_str, "%Y-%m-%d")
-
 
 def should_renew(expiry_str: str) -> bool:
     """判断是否到续期时间（到期前一天）"""
     # expiry_date = parse_expiry_date(expiry_str)
     # today = datetime.today()
     expiry_date = parse_expiry_date(expiry_str).date()
-    today = datetime.today().date()
+        today = datetime.today().date()
 
     delta_days = (expiry_date - today).days
-    print(f"距离到期还有: {delta_days} 天")
+    print(f"📅 到期日期: {expiry_date}, 今日日期: {today}, 相差天数: {delta_days}")
+    
     # return (expiry_date - today).days == 1
     return delta_days == 1
 
@@ -106,13 +104,14 @@ def main():
             expiry_str = get_expiry(sb)
             print(f"📅 当前 Expiry: {expiry_str}")
 
+            # ===== 逻辑判定 =====
             if not should_renew(expiry_str):
                 idle_msg = (
                     f"ℹ️ *Katabump 状态检查*\n"
                     f"📅 当前到期: `{expiry_str}`\n"
                     f"⏳ 还没到续期时间，今天不操作。"
                 )
-                print("ℹ️ 还没到续期时间，今天不续期，脚本结束")
+                print("ℹ️ 还没到续期时间，今天不干活，溜了溜了")
                 send_tg_msg(idle_msg)
                 return
 
@@ -178,16 +177,11 @@ def main():
             send_tg_msg(final_msg)
 
     except Exception as e:
-        fail_msg = (
-            f"💥 *Katabump 脚本运行出错*\n"
-            f"❌ 错误信息: `{str(e)}`"
-            )
-        print(fail_msg)
+        fail_msg = f"💥 *Katabump 脚本出错*\n❌ 错误信息: `{str(e)}`"
         send_tg_msg(fail_msg)    
 
     finally:
-        if display:
-            display.stop()
+        if display: display.stop()
 
 if __name__ == "__main__":
     main()
