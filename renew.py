@@ -67,10 +67,15 @@ def parse_expiry_date(expiry_str: str) -> datetime:
 
 def should_renew(expiry_str: str) -> bool:
     """判断是否到续期时间（到期前一天）"""
-    expiry_date = parse_expiry_date(expiry_str)
-    today = datetime.today()
-    return (expiry_date - today).days == 1
+    # expiry_date = parse_expiry_date(expiry_str)
+    # today = datetime.today()
+    expiry_date = parse_expiry_date(expiry_str).date()
+    today = datetime.today().date()
 
+    delta_days = (expiry_date - today).days
+    print(f"距离到期还有: {delta_days} 天")
+    # return (expiry_date - today).days == 1
+    return delta_days == 1
 
 def main():
     if not EMAIL or not PASSWORD:
