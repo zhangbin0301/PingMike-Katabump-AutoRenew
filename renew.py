@@ -67,7 +67,7 @@ def should_renew(expiry_str: str) -> bool:
     # expiry_date = parse_expiry_date(expiry_str)
     # today = datetime.today()
     expiry_date = parse_expiry_date(expiry_str).date()
-        today = datetime.today().date()
+    today = datetime.today().date()
 
     delta_days = (expiry_date - today).days
     print(f"📅 到期日期: {expiry_date}, 今日日期: {today}, 相差天数: {delta_days}")
