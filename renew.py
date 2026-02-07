@@ -146,12 +146,22 @@ def main():
 
             # ===== 提交 Renew =====
             sb.execute_script("document.querySelector('#renew-modal form').submit();")
-            time.sleep(3)
+            print("⏳ 提交成功，等待服务器处理数据（10秒）...")
+            time.sleep(10)
             screenshot(sb, "05_after_submit.png")
 
-            sb.refresh()
-            time.sleep(3)
+            #sb.refresh()
+            print("🔄 正在强制刷新页面以获取最新日期...")
+            sb.execute_script("location.reload(true);")
+            time.sleep(5)
             new_expiry = get_expiry(sb)
+            
+            # 二次补偿机制：如果日期没变，再执行一次普通刷新
+            if new_expiry == expiry_str:
+                print("⚠️ 日期未更新，尝试第二次刷新...")
+                sb.refresh()
+                time.sleep(5)
+                new_expiry = get_expiry(sb)            
             
             final_msg = (
                 f"✅ *Katabump 续期成功*\n"
